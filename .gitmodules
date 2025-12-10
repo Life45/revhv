@@ -1,0 +1,3 @@
+[submodule "revhv-km/external/ia32-doc"]
+	path = revhv-km/external/ia32-doc
+	url = https://github.com/ia32-doc/ia32-doc
