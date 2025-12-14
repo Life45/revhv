@@ -80,6 +80,8 @@ namespace hv::vmcs
 		desiredExitCtls.load_ia32_pat = 1;
 		desiredExitCtls.save_ia32_efer = 1;
 		desiredExitCtls.load_ia32_efer = 1;
+		desiredExitCtls.save_ia32_perf_global_ctl = 1;
+		desiredExitCtls.load_ia32_perf_global_ctrl = 1;
 		desiredExitCtls.conceal_vmx_from_pt = 1;
 
 		if (!write_control_field(desiredExitCtls.flags, VMCS_CTRL_PRIMARY_VMEXIT_CONTROLS, IA32_VMX_EXIT_CTLS, IA32_VMX_TRUE_EXIT_CTLS))
@@ -128,6 +130,7 @@ namespace hv::vmcs
 		desiredEntryCtls.ia32e_mode_guest = 1;
 		desiredEntryCtls.load_ia32_efer = 1;
 		desiredEntryCtls.load_ia32_pat = 1;
+		desiredEntryCtls.load_ia32_perf_global_ctrl = 1;
 		desiredEntryCtls.conceal_vmx_from_pt = 1;
 
 		if (!write_control_field(desiredEntryCtls.flags, VMCS_CTRL_VMENTRY_CONTROLS, IA32_VMX_ENTRY_CTLS, IA32_VMX_TRUE_ENTRY_CTLS))
@@ -713,6 +716,71 @@ namespace hv::vmcs
 			LOG_ERROR("Failed to write host IDTR base to VMCS");
 			return false;
 		}
+
+		// MSRs
+
+		if (!vmx::vmx_vmwrite(VMCS_HOST_SYSENTER_CS, 0))
+		{
+			LOG_ERROR("Failed to write host SYSENTER_CS to VMCS");
+			return false;
+		}
+		if (!vmx::vmx_vmwrite(VMCS_HOST_SYSENTER_ESP, 0))
+		{
+			LOG_ERROR("Failed to write host SYSENTER_ESP to VMCS");
+			return false;
+		}
+		if (!vmx::vmx_vmwrite(VMCS_HOST_SYSENTER_EIP, 0))
+		{
+			LOG_ERROR("Failed to write host SYSENTER_EIP to VMCS");
+			return false;
+		}
+
+		if (!vmx::vmx_vmwrite(VMCS_HOST_PERF_GLOBAL_CTRL, 0))
+		{
+			LOG_ERROR("Failed to write host PERF_GLOBAL_CTRL to VMCS");
+			return false;
+		}
+
+		ia32_efer_register efer = {0};
+		efer.ia32e_mode_enable = 1;
+		efer.ia32e_mode_active = 1;
+		efer.syscall_enable = 1;
+		efer.execute_disable_bit_enable = 1;
+		if (!vmx::vmx_vmwrite(VMCS_HOST_EFER, efer.flags))
+		{
+			LOG_ERROR("Failed to write host EFER to VMCS");
+			return false;
+		}
+
+		// Configure PAT according to 13.12.4 Programming the PAT, Memory Type Setting of PAT Entries Following a Power-up or Reset.
+		// It shouldn't really matter whether we configure a "default after reset" PAT or copy the OS-configured PAT, since we should only care about regular system memory.
+		// Keep in mind that this is not bulletproof, and it's best to avoid accessing potentially problematic ranges or pages.
+		// See map_host_page_tables @ memory.cpp for additional implications.
+		ia32_pat_register pat = {0};
+		pat.pa0 = MEMORY_TYPE_WRITE_BACK;
+		pat.pa1 = MEMORY_TYPE_WRITE_THROUGH;
+		pat.pa1 = MEMORY_TYPE_WRITE_THROUGH;
+		pat.pa2 = MEMORY_TYPE_UNCACHEABLE_MINUS;
+		pat.pa3 = MEMORY_TYPE_UNCACHEABLE;
+		pat.pa4 = MEMORY_TYPE_WRITE_BACK;
+		pat.pa5 = MEMORY_TYPE_WRITE_THROUGH;
+		pat.pa6 = MEMORY_TYPE_UNCACHEABLE_MINUS;
+		pat.pa7 = MEMORY_TYPE_UNCACHEABLE;
+		if (!vmx::vmx_vmwrite(VMCS_HOST_PAT, pat.flags))
+		{
+			LOG_ERROR("Failed to write host PAT to VMCS");
+			return false;
+		}
+
+		// No PMCs
+		ia32_perf_global_ctrl_register perf_global_ctrl = {0};
+		if (!vmx::vmx_vmwrite(VMCS_HOST_PERF_GLOBAL_CTRL, perf_global_ctrl.flags))
+		{
+			LOG_ERROR("Failed to write host PERF_GLOBAL_CTRL to VMCS");
+			return false;
+		}
+
+		return true;
 	}
 
 	bool write_control_field(uint64_t value, const uint64_t controlField, const uint64_t capMsr, const uint64_t trueCapMsr)
