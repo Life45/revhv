@@ -33,6 +33,8 @@ namespace hv::vmx
 			LOG_ERROR("VMX outside SMX is not enabled");
 			return false;
 		}
+
+		return true;
 	}
 
 	void enable_vmx()
@@ -98,33 +100,4 @@ namespace hv::vmx
 		vmx_vmxoff();
 	}
 
-}  // namespace hv::vmx
-
-// Inline wrappers
-namespace hv::vmx
-{
-	inline bool vmx_vmxon(uint64_t vmxonPhys)
-	{
-		return __vmx_on(reinterpret_cast<uint64_t*>(vmxonPhys)) == 0;
-	}
-
-	inline void vmx_vmxoff()
-	{
-		__vmx_off();
-	}
-
-	inline bool vmx_vmclear(uint64_t vmcsPhys)
-	{
-		return __vmx_vmclear(reinterpret_cast<uint64_t*>(vmcsPhys)) == 0;
-	}
-
-	inline bool vmx_vmptrld(uint64_t vmcsPhys)
-	{
-		return __vmx_vmptrld(reinterpret_cast<uint64_t*>(vmcsPhys)) == 0;
-	}
-
-	inline bool vmx_vmwrite(uint64_t field, uint64_t value)
-	{
-		return __vmx_vmwrite(field, value) == 0;
-	}
 }  // namespace hv::vmx

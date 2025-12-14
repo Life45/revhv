@@ -1,13 +1,13 @@
 namespace utils
 {
 	template <typename T>
-	void set_bit(T& value, const uint64_t bit)
+	inline void set_bit(T& value, const uint64_t bit)
 	{
 		value |= (1ull << bit);
 	}
 
 	template <typename T>
-	void clear_bit(T& value, const uint64_t bit)
+	inline void clear_bit(T& value, const uint64_t bit)
 	{
 		value &= ~(1ull << bit);
 	}
@@ -21,7 +21,7 @@ namespace utils
 
 	namespace segment
 	{
-		uint64_t base_address(const segment_descriptor_register_64& gdt, const segment_selector& selector)
+		inline uint64_t base_address(const segment_descriptor_register_64& gdt, const segment_selector& selector)
 		{
 			//
 			// 3.4.5 Segment Descriptors
@@ -41,7 +41,7 @@ namespace utils
 			return base_address;
 		}
 
-		uint32_t limit(const segment_descriptor_register_64& gdt, const segment_selector& selector)
+		inline uint32_t limit(const segment_descriptor_register_64& gdt, const segment_selector& selector)
 		{
 			//
 			// 3.4.5 Segment Descriptors
@@ -55,7 +55,7 @@ namespace utils
 			return limit;
 		}
 
-		vmx_segment_access_rights access_rights(const segment_descriptor_register_64& gdt, const segment_selector& selector)
+		inline vmx_segment_access_rights access_rights(const segment_descriptor_register_64& gdt, const segment_selector& selector)
 		{
 			//
 			// 3.4.5 Segment Descriptors & 26.4.1 Guest Register State

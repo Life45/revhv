@@ -26,24 +26,39 @@ namespace hv::vmx
 	/// @brief Executes VMXON
 	/// @param vmxonPhys Physical address of the VMXON region
 	/// @return True if VMXON was executed successfully, false otherwise
-	bool vmx_vmxon(uint64_t vmxonPhys);
+	inline bool vmx_vmxon(uint64_t vmxonPhys)
+	{
+		return __vmx_on(reinterpret_cast<uint64_t*>(vmxonPhys)) == 0;
+	}
 
 	/// @brief Executes VMXOFF
-	void vmx_vmxoff();
+	inline void vmx_vmxoff()
+	{
+		__vmx_off();
+	}
 
 	/// @brief Executes VMCLEAR
 	/// @param vmcsPhys Physical address of the VMCS region
 	/// @return True if VMCLEAR was executed successfully, false otherwise
-	bool vmx_vmclear(uint64_t vmcsPhys);
+	inline bool vmx_vmclear(uint64_t vmcsPhys)
+	{
+		return __vmx_vmclear(reinterpret_cast<uint64_t*>(vmcsPhys)) == 0;
+	}
 
 	/// @brief Executes VMPTRLD
 	/// @param vmcsPhys Physical address of the VMCS region
 	/// @return True if VMPTRLD was executed successfully, false otherwise
-	bool vmx_vmptrld(uint64_t vmcsPhys);
+	inline bool vmx_vmptrld(uint64_t vmcsPhys)
+	{
+		return __vmx_vmptrld(reinterpret_cast<uint64_t*>(vmcsPhys)) == 0;
+	}
 
 	/// @brief Executes VMWRITE
 	/// @param field Field to write
 	/// @param value Value to write
 	/// @return True if VMWRITE was executed successfully, false otherwise
-	bool vmx_vmwrite(uint64_t field, uint64_t value);
+	inline bool vmx_vmwrite(uint64_t field, uint64_t value)
+	{
+		return __vmx_vmwrite(field, value) == 0;
+	}
 }  // namespace hv::vmx

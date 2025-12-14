@@ -2,20 +2,6 @@
 #include "includes.h"
 #include "utils.hpp"
 
-// TODO: Move
-union pml4_virtual_address
-{
-	void* virtual_address;	// The virtual address
-	struct
-	{
-		uint64_t offset : 12;	  // Offset into the page
-		uint64_t pt_idx : 9;	  // Page table index
-		uint64_t pd_idx : 9;	  // Page directory index
-		uint64_t pdpt_idx : 9;	  // Page directory pointer table index
-		uint64_t pml4_idx : 9;	  // PML4 table index
-		uint64_t sign_bits : 16;  // Sign extension bits
-	};
-};
 namespace hv::memory
 {
 	// 256-511 are generally used in kernel space for Windows, so we use 255 for our PML4 index.

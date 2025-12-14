@@ -23,11 +23,15 @@ namespace hv::vcpu
 		gdt::initialize(vcpu->host_gdt, &vcpu->host_tss);
 		gdt::initialize_tss(&vcpu->host_tss, vcpu->host_ist1_nmi, vcpu->host_ist2_df, vcpu->host_ist3_mc, ist_size);
 
+		idt::initialize(vcpu->host_idt);
+
 		if (!vmcs::load_vmcs(vcpu))
 		{
 			LOG_ERROR("Failed to load VMCS region");
 			return false;
 		}
+
+		return true;
 	}
 
 }  // namespace hv::vcpu

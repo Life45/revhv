@@ -1,12 +1,15 @@
 #pragma once
 #include "includes.h"
 #include "gdt.h"
+#include "idt.h"
 
 namespace hv::vcpu
 {
 	constexpr size_t host_stack_size = 0x8000;	// 32 KB
 	constexpr size_t ist_size = 0x4000;			// 16 KB
-
+	constexpr int ist_index_nmi = 1;
+	constexpr int ist_index_df = 2;
+	constexpr int ist_index_mc = 3;
 	struct vcpu
 	{
 		alignas(0x1000) uint8_t host_stack[host_stack_size];
@@ -14,6 +17,8 @@ namespace hv::vcpu
 		alignas(0x1000) task_state_segment_64 host_tss;
 
 		alignas(0x1000) segment_descriptor_32 host_gdt[gdt::host_descriptor_count];
+
+		alignas(0x1000) segment_descriptor_interrupt_gate_64 host_idt[idt::idt_gate_count];
 
 		// IST(1) for NMI
 		alignas(0x1000) uint8_t host_ist1_nmi[ist_size];

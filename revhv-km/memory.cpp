@@ -31,7 +31,9 @@ namespace hv::memory
 		}
 
 		// Copy top half of system PML4 to host PML4
-		auto system_pml4 = MmGetVirtualForPhysical(PHYSICAL_ADDRESS(system_cr3.address_of_page_directory));
+		PHYSICAL_ADDRESS system_pml4_pa;
+		system_pml4_pa.QuadPart = system_cr3.address_of_page_directory;
+		auto system_pml4 = MmGetVirtualForPhysical(system_pml4_pa);
 		if (!system_pml4)
 		{
 			LOG_ERROR("Failed to get virtual address for system PML4");

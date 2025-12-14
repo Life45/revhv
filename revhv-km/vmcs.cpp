@@ -6,7 +6,7 @@
 namespace hv::vmcs
 {
 
-	static bool write_pin_based_vm_execution_controls(vcpu::vcpu* vcpu)
+	static bool write_pin_based_vm_execution_controls()
 	{
 		//
 		// 26.6.1 Pin-Based VM-Execution Controls
@@ -28,7 +28,7 @@ namespace hv::vmcs
 		return true;
 	}
 
-	static bool write_processor_based_vm_execution_controls(vcpu::vcpu* vcpu)
+	static bool write_processor_based_vm_execution_controls()
 	{
 		//
 		// 26.6.2 Processor-Based VM-Execution Controls
@@ -67,7 +67,7 @@ namespace hv::vmcs
 		return true;
 	}
 
-	static bool write_vmexit_controls(vcpu::vcpu* vcpu)
+	static bool write_vmexit_controls()
 	{
 		//
 		// 26.7.1 Primary VM-Exit Controls
@@ -117,7 +117,7 @@ namespace hv::vmcs
 		return true;
 	}
 
-	static bool write_vmentry_controls(vcpu::vcpu* vcpu)
+	static bool write_vmentry_controls()
 	{
 		//
 		// 26.8.1 VM-Entry Controls
@@ -389,7 +389,7 @@ namespace hv::vmcs
 		}
 
 		segment_descriptor_register_64 gdt = {0};
-		_lgdt(&gdt);
+		//_lgdt(&gdt);
 		segment_descriptor_register_64 idt = {0};
 		__sidt(&idt);
 
@@ -688,7 +688,7 @@ namespace hv::vmcs
 		}
 
 		// Base for FS, GS, TR, GDTR, and IDTR (FS used for VCPU)
-		if (!vmx::vmx_vmwrite(VMCS_HOST_FS_BASE, reinterpret_cast<uint64_t>(&vcpu)))
+		if (!vmx::vmx_vmwrite(VMCS_HOST_FS_BASE, reinterpret_cast<uint64_t>(vcpu)))
 		{
 			LOG_ERROR("Failed to write host FS base to VMCS");
 			return false;
@@ -706,6 +706,11 @@ namespace hv::vmcs
 		if (!vmx::vmx_vmwrite(VMCS_HOST_GDTR_BASE, reinterpret_cast<uint64_t>(vcpu->host_gdt)))
 		{
 			LOG_ERROR("Failed to write host GDTR base to VMCS");
+			return false;
+		}
+		if (!vmx::vmx_vmwrite(VMCS_HOST_IDTR_BASE, reinterpret_cast<uint64_t>(vcpu->host_idt)))
+		{
+			LOG_ERROR("Failed to write host IDTR base to VMCS");
 			return false;
 		}
 	}
@@ -775,25 +780,25 @@ namespace hv::vmcs
 
 	bool write_control_fields(vcpu::vcpu* vcpu)
 	{
-		if (!write_pin_based_vm_execution_controls(vcpu))
+		if (!write_pin_based_vm_execution_controls())
 		{
 			LOG_ERROR("Failed to write pin-based VM-execution controls to VMCS");
 			return false;
 		}
 
-		if (!write_processor_based_vm_execution_controls(vcpu))
+		if (!write_processor_based_vm_execution_controls())
 		{
 			LOG_ERROR("Failed to write processor-based VM-execution controls to VMCS");
 			return false;
 		}
 
-		if (!write_vmexit_controls(vcpu))
+		if (!write_vmexit_controls())
 		{
 			LOG_ERROR("Failed to write VM-exit controls to VMCS");
 			return false;
 		}
 
-		if (!write_vmentry_controls(vcpu))
+		if (!write_vmentry_controls())
 		{
 			LOG_ERROR("Failed to write VM-entry controls to VMCS");
 			return false;
@@ -802,6 +807,18 @@ namespace hv::vmcs
 		if (!write_other_control_fields(vcpu))
 		{
 			LOG_ERROR("Failed to write other control fields to VMCS");
+			return false;
+		}
+
+		if (!write_guest_state_fields(vcpu))
+		{
+			LOG_ERROR("Failed to write guest state fields to VMCS");
+			return false;
+		}
+
+		if (!write_host_state_fields(vcpu))
+		{
+			LOG_ERROR("Failed to write host state fields to VMCS");
 			return false;
 		}
 
