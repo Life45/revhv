@@ -127,6 +127,7 @@
     <ClCompile Include="serial.cpp" />
     <ClCompile Include="vcpu.cpp" />
     <ClCompile Include="vmcs.cpp" />
+    <ClCompile Include="vmexit.cpp" />
     <ClCompile Include="vmx.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -142,11 +143,14 @@
     <ClInclude Include="utils.hpp" />
     <ClInclude Include="vcpu.h" />
     <ClInclude Include="vmcs.h" />
+    <ClInclude Include="vmexit.h" />
     <ClInclude Include="vmx.h" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="isr.asm" />
     <MASM Include="utils.asm" />
+    <MASM Include="vmexit_stub.asm" />
+    <MASM Include="vmlaunch_stub.asm" />
   </ItemGroup>
   <ItemGroup>
     <None Include="utils.inl" />

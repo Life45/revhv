@@ -4,6 +4,10 @@
 
 namespace hv::vmx
 {
+	/// @brief VMLAUNCH stub
+	/// @note: Defined in vmlaunch_stub.asm
+	extern "C" bool vmx_vmlaunch_stub(uint64_t* rflags);
+
 	/// @brief Checks if VMX is supported by the CPU
 	/// @return True if VMX is supported, false otherwise
 	bool check_vmx_support();
@@ -18,6 +22,10 @@ namespace hv::vmx
 
 	/// @brief Exits VMX operation using VMXOFF
 	void exit_vmx_operation();
+
+	/// @brief Launches the VM using VMLAUNCH
+	/// @return True if VM was launched successfully, false otherwise
+	bool launch_vm();
 }  // namespace hv::vmx
 
 // Inline wrappers
@@ -60,5 +68,18 @@ namespace hv::vmx
 	inline bool vmx_vmwrite(uint64_t field, uint64_t value)
 	{
 		return __vmx_vmwrite(field, value) == 0;
+	}
+
+	/// @brief Executes VMREAD
+	/// @param field Field to read
+	/// @return Value of the field
+	inline uint64_t vmx_vmread(uint64_t field)
+	{
+		uint64_t value;
+		if (__vmx_vmread(field, &value) != 0)
+		{
+			return 0;
+		}
+		return value;
 	}
 }  // namespace hv::vmx

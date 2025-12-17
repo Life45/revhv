@@ -31,6 +31,18 @@ namespace hv::vcpu
 			return false;
 		}
 
+		if (!vmcs::write_control_fields(vcpu))
+		{
+			LOG_ERROR("Failed to write control fields to VMCS");
+			return false;
+		}
+
+		if (!vmx::launch_vm())
+		{
+			LOG_ERROR("Failed to launch VM");
+			return false;
+		}
+
 		return true;
 	}
 

@@ -2,6 +2,7 @@
 #include "vmx.h"
 #include "utils.hpp"
 #include "hv.h"
+#include "vmexit.h"
 
 namespace hv::vmcs
 {
@@ -639,15 +640,17 @@ namespace hv::vmcs
 			return false;
 		}
 
+		// 16 byte aligned RSP
+		uint64_t host_rsp = (reinterpret_cast<uint64_t>(vcpu->host_stack) + vcpu::host_stack_size) & ~0xFULL;  // 16B align down
+
 		// RSP, RIP
-		if (!vmx::vmx_vmwrite(VMCS_HOST_RSP, reinterpret_cast<uint64_t>(&vcpu->host_stack[vcpu::host_stack_size])))
+		if (!vmx::vmx_vmwrite(VMCS_HOST_RSP, host_rsp))
 		{
 			LOG_ERROR("Failed to write host RSP to VMCS");
 			return false;
 		}
 
-		// TODO: Set to vmexit handler
-		if (!vmx::vmx_vmwrite(VMCS_HOST_RIP, 0ull))
+		if (!vmx::vmx_vmwrite(VMCS_HOST_RIP, reinterpret_cast<uint64_t>(vmexit::vmexit_stub)))
 		{
 			LOG_ERROR("Failed to write host RIP to VMCS");
 			return false;
