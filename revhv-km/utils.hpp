@@ -36,12 +36,6 @@ namespace utils
 		/// @return Base address of the segment
 		uint64_t base_address(const segment_descriptor_register_64& gdt, const segment_selector& selector);
 
-		/// @brief Calculates the limit of a segment
-		/// @param gdt GDT register
-		/// @param selector Segment selector
-		/// @return Limit of the segment
-		uint32_t limit(const segment_descriptor_register_64& gdt, const segment_selector& selector);
-
 		/// @brief Calculates the access rights of a segment for VMCS
 		/// @param gdt GDT register
 		/// @param selector Segment selector

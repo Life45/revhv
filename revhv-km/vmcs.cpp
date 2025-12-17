@@ -309,7 +309,7 @@ namespace hv::vmcs
 			LOG_ERROR("Failed to write guest CR0 to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_CR3, g_hv.system_cr3.flags))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_CR3, __readcr3()))
 		{
 			LOG_ERROR("Failed to write guest CR3 to VMCS");
 			return false;
@@ -441,42 +441,42 @@ namespace hv::vmcs
 		}
 
 		// Limits for CS, SS, DS, ES, FS, GS, LDTR, and TR
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_CS_LIMIT, utils::segment::limit(gdt, utils::segment::read_cs())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_CS_LIMIT, __segmentlimit(utils::segment::read_cs().flags)))
 		{
 			LOG_ERROR("Failed to write guest CS limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_SS_LIMIT, utils::segment::limit(gdt, utils::segment::read_ss())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_SS_LIMIT, __segmentlimit(utils::segment::read_ss().flags)))
 		{
 			LOG_ERROR("Failed to write guest SS limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_DS_LIMIT, utils::segment::limit(gdt, utils::segment::read_ds())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_DS_LIMIT, __segmentlimit(utils::segment::read_ds().flags)))
 		{
 			LOG_ERROR("Failed to write guest DS limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_ES_LIMIT, utils::segment::limit(gdt, utils::segment::read_es())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_ES_LIMIT, __segmentlimit(utils::segment::read_es().flags)))
 		{
 			LOG_ERROR("Failed to write guest ES limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_FS_LIMIT, utils::segment::limit(gdt, utils::segment::read_fs())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_FS_LIMIT, __segmentlimit(utils::segment::read_fs().flags)))
 		{
 			LOG_ERROR("Failed to write guest FS limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_GS_LIMIT, utils::segment::limit(gdt, utils::segment::read_gs())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_GS_LIMIT, __segmentlimit(utils::segment::read_gs().flags)))
 		{
 			LOG_ERROR("Failed to write guest GS limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_LDTR_LIMIT, utils::segment::limit(gdt, utils::segment::read_ldtr())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_LDTR_LIMIT, __segmentlimit(utils::segment::read_ldtr().flags)))
 		{
 			LOG_ERROR("Failed to write guest LDTR limit to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_TR_LIMIT, utils::segment::limit(gdt, utils::segment::read_tr())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_TR_LIMIT, __segmentlimit(utils::segment::read_tr().flags)))
 		{
 			LOG_ERROR("Failed to write guest TR limit to VMCS");
 			return false;

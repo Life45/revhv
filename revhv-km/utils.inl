@@ -41,32 +41,22 @@ namespace utils
 			// 3.4.5 Segment Descriptors
 			//
 
+			if (selector.index == 0)
+				return 0;
+
 			segment_descriptor_32* descriptor = reinterpret_cast<segment_descriptor_32*>(gdt.base_address + selector.index * 8);
 
 			// 3.5.2 Segment Descriptor Tables in IA-32e Mode
 			if (descriptor->descriptor_type == SEGMENT_DESCRIPTOR_TYPE_SYSTEM)
 			{
 				segment_descriptor_64* descriptor64 = reinterpret_cast<segment_descriptor_64*>(descriptor);
-				uint64_t base_address = descriptor64->base_address_upper << 32 | descriptor64->base_address_high << 24 | descriptor64->base_address_middle << 16 | descriptor64->base_address_low;
+
+				uint64_t base_address = static_cast<uint64_t>(descriptor64->base_address_upper) << 32 | static_cast<uint64_t>(descriptor64->base_address_high) << 24 | static_cast<uint64_t>(descriptor64->base_address_middle) << 16 | static_cast<uint64_t>(descriptor64->base_address_low);
 				return base_address;
 			}
 
-			uint64_t base_address = descriptor->base_address_high << 24 | descriptor->base_address_middle << 16 | descriptor->base_address_low;
+			uint64_t base_address = static_cast<uint64_t>(descriptor->base_address_high) << 24 | static_cast<uint64_t>(descriptor->base_address_middle) << 16 | static_cast<uint64_t>(descriptor->base_address_low);
 			return base_address;
-		}
-
-		inline uint32_t limit(const segment_descriptor_register_64& gdt, const segment_selector& selector)
-		{
-			//
-			// 3.4.5 Segment Descriptors
-			//
-
-			segment_descriptor_32* descriptor = reinterpret_cast<segment_descriptor_32*>(gdt.base_address + selector.index * 8);
-
-			// Since the limit isn't calculated differently for IA-32e Mode, we don't need to use segment_descriptor_64
-
-			uint64_t limit = descriptor->segment_limit_high << 16 | descriptor->segment_limit_low;
-			return limit;
 		}
 
 		inline vmx_segment_access_rights access_rights(const segment_descriptor_register_64& gdt, const segment_selector& selector)
