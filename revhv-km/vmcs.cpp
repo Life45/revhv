@@ -393,7 +393,7 @@ namespace hv::vmcs
 		}
 
 		segment_descriptor_register_64 gdt = {0};
-		//_lgdt(&gdt);
+		_sgdt(&gdt);
 		segment_descriptor_register_64 idt = {0};
 		__sidt(&idt);
 
@@ -628,7 +628,7 @@ namespace hv::vmcs
 			return false;
 		}
 		cr3 host_cr3 = {0};
-		host_cr3.address_of_page_directory = MmGetPhysicalAddress(&g_hv.host_page_tables.pml4e).QuadPart;
+		host_cr3.address_of_page_directory = MmGetPhysicalAddress(&g_hv.host_page_tables.pml4e).QuadPart >> 12;
 		if (!vmx::vmx_vmwrite(VMCS_HOST_CR3, host_cr3.flags))
 		{
 			LOG_ERROR("Failed to write host CR3 to VMCS");

@@ -1,5 +1,6 @@
 #include "includes.h"
 #include "serial.h"
+#include "hv.h"
 
 EXTERN_C VOID DriverUnload(PDRIVER_OBJECT DriverObject)
 {
@@ -27,6 +28,14 @@ EXTERN_C NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regis
 
 	LOG_INFO_DBGPRINT("Initialized serial port %u", serial::SERIAL_COM_1);
 
-	LOG_INFO("Driver initialized");
+	LOG_INFO("Driver initialized, starting the hypervisor...");
+
+	if (!hv::start())
+	{
+		LOG_ERROR("Failed to virtualize processors");
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	LOG_INFO("Hypervisor started successfully");
 	return STATUS_SUCCESS;
 }

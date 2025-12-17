@@ -36,7 +36,8 @@ namespace hv::vmx
 	/// @return True if VMXON was executed successfully, false otherwise
 	inline bool vmx_vmxon(uint64_t vmxonPhys)
 	{
-		return __vmx_on(reinterpret_cast<uint64_t*>(vmxonPhys)) == 0;
+		uint64_t vmxon_pa = vmxonPhys;
+		return __vmx_on(reinterpret_cast<uint64_t*>(&vmxon_pa)) == 0;
 	}
 
 	/// @brief Executes VMXOFF
@@ -50,7 +51,8 @@ namespace hv::vmx
 	/// @return True if VMCLEAR was executed successfully, false otherwise
 	inline bool vmx_vmclear(uint64_t vmcsPhys)
 	{
-		return __vmx_vmclear(reinterpret_cast<uint64_t*>(vmcsPhys)) == 0;
+		uint64_t vmcs_pa = vmcsPhys;
+		return __vmx_vmclear(reinterpret_cast<uint64_t*>(&vmcs_pa)) == 0;
 	}
 
 	/// @brief Executes VMPTRLD
@@ -58,7 +60,8 @@ namespace hv::vmx
 	/// @return True if VMPTRLD was executed successfully, false otherwise
 	inline bool vmx_vmptrld(uint64_t vmcsPhys)
 	{
-		return __vmx_vmptrld(reinterpret_cast<uint64_t*>(vmcsPhys)) == 0;
+		uint64_t vmcs_pa = vmcsPhys;
+		return __vmx_vmptrld(reinterpret_cast<uint64_t*>(&vmcs_pa)) == 0;
 	}
 
 	/// @brief Executes VMWRITE

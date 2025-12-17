@@ -22,6 +22,12 @@ namespace utils
 	template <typename T>
 	void clear_bit(T& value, const uint64_t bit);
 
+	/// @brief Executes a function on each CPU core
+	/// @tparam Func Function type to execute
+	/// @param func Function to execute on each CPU core
+	template <typename Func>
+	void for_each_cpu(Func func);
+
 	namespace segment
 	{
 		/// @brief Calculates the base address of a segment

@@ -43,7 +43,7 @@ namespace hv::memory
 
 		// Copy top half of system PML4 to host PML4
 		PHYSICAL_ADDRESS system_pml4_pa;
-		system_pml4_pa.QuadPart = system_cr3.address_of_page_directory;
+		system_pml4_pa.QuadPart = system_cr3.address_of_page_directory << 12;
 		auto system_pml4 = MmGetVirtualForPhysical(system_pml4_pa);
 		if (!system_pml4)
 		{

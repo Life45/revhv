@@ -19,6 +19,20 @@ namespace utils
 		return (va & (1ULL << 47)) ? (va | canonical_high) : (va & canonical_low);
 	}
 
+	template <typename Func>
+	inline void for_each_cpu(Func func)
+	{
+		auto logicalProcessorCount = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
+		for (uint32_t i = 0; i < logicalProcessorCount; i++)
+		{
+			auto const orig_affinity = KeSetSystemAffinityThreadEx(1ull << i);
+
+			func(i);
+
+			KeRevertToUserAffinityThreadEx(orig_affinity);
+		}
+	}
+
 	namespace segment
 	{
 		inline uint64_t base_address(const segment_descriptor_register_64& gdt, const segment_selector& selector)

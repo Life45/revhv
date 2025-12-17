@@ -182,6 +182,8 @@ namespace hv::vcpu
 		alignas(0x1000) vmx_msr_bitmap msr_bitmap;
 
 		guest_context* guest_context;
+
+		size_t core_id;
 	};
 
 	bool virtualize(vcpu* vcpu);
