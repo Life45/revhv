@@ -23,7 +23,7 @@ generic_isr proc
     ; first argument is rsp(trap frame)
     mov rcx, rsp
     ; second argument is the vcpu pointer (fsbase)
-    mov rdx, fs:[0]
+    rdfsbase rdx
 
     sub rsp, 20h
     call ?handle_exception@exception@hv@@YAXPEAUtrap_frame@12@PEAUvcpu@42@@Z

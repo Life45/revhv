@@ -138,7 +138,7 @@ vmexit_stub proc
     ; First argument is the guest context pointer
     mov rcx, rsp
     ; Second argument is the vcpu pointer
-    mov rdx, fs:[0]
+    rdfsbase rdx
 
     ; Shadow stack and call the vmexit handler
     sub rsp, 20h

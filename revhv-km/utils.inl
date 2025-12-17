@@ -44,7 +44,7 @@ namespace utils
 			segment_descriptor_32* descriptor = reinterpret_cast<segment_descriptor_32*>(gdt.base_address + selector.index * 8);
 
 			// 3.5.2 Segment Descriptor Tables in IA-32e Mode
-			if (descriptor->type == SEGMENT_DESCRIPTOR_TYPE_SYSTEM)
+			if (descriptor->descriptor_type == SEGMENT_DESCRIPTOR_TYPE_SYSTEM)
 			{
 				segment_descriptor_64* descriptor64 = reinterpret_cast<segment_descriptor_64*>(descriptor);
 				uint64_t base_address = descriptor64->base_address_upper << 32 | descriptor64->base_address_high << 24 | descriptor64->base_address_middle << 16 | descriptor64->base_address_low;

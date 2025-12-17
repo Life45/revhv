@@ -419,12 +419,12 @@ namespace hv::vmcs
 			LOG_ERROR("Failed to write guest ES base address to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_FS_BASE, utils::segment::base_address(gdt, utils::segment::read_fs())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_FS_BASE, __readmsr(IA32_FS_BASE)))
 		{
 			LOG_ERROR("Failed to write guest FS base address to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_GS_BASE, utils::segment::base_address(gdt, utils::segment::read_gs())))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_GS_BASE, __readmsr(IA32_GS_BASE)))
 		{
 			LOG_ERROR("Failed to write guest GS base address to VMCS");
 			return false;

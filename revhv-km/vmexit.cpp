@@ -1,5 +1,6 @@
 #include "vmexit.h"
 #include "vmx.h"
+#include "serial.h"
 
 namespace hv::vmexit
 {
@@ -7,7 +8,7 @@ namespace hv::vmexit
 	{
 		uint64_t rip = vmx::vmx_vmread(VMCS_GUEST_RIP);
 		size_t instruction_length = vmx::vmx_vmread(VMCS_VMEXIT_INSTRUCTION_LENGTH);
-		if (vmx::vmx_vmwrite(VMCS_GUEST_RIP, rip + instruction_length))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_RIP, rip + instruction_length))
 		{
 			LOG_ERROR("Failed to advance guest RIP");
 			// TODO: Fail appropriately

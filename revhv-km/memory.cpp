@@ -51,7 +51,8 @@ namespace hv::memory
 			return false;
 		}
 
-		memcpy(&host_page_tables.pml4e[256], reinterpret_cast<uint8_t*>(system_pml4) + 256, 256 * sizeof(pml4e_64));
+		auto system_pml4e = reinterpret_cast<pml4e_64*>(system_pml4);
+		memcpy(&host_page_tables.pml4e[256], &system_pml4e[256], 256 * sizeof(pml4e_64));
 		return true;
 	}
 }  // namespace hv::memory
