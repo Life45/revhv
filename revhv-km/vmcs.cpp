@@ -344,49 +344,49 @@ namespace hv::vmcs
 		}
 
 		// Selectors for CS, SS, DS, ES, FS, GS, LDTR, and TR
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_CS_SELECTOR, utils::segment::read_cs().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_CS_SELECTOR, utils::segment::read_cs().flags))
 		{
 			LOG_ERROR("Failed to write guest CS selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_SS_SELECTOR, utils::segment::read_ss().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_SS_SELECTOR, utils::segment::read_ss().flags))
 		{
 			LOG_ERROR("Failed to write guest SS selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_DS_SELECTOR, utils::segment::read_ds().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_DS_SELECTOR, utils::segment::read_ds().flags))
 		{
 			LOG_ERROR("Failed to write guest DS selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_ES_SELECTOR, utils::segment::read_es().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_ES_SELECTOR, utils::segment::read_es().flags))
 		{
 			LOG_ERROR("Failed to write guest ES selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_FS_SELECTOR, utils::segment::read_fs().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_FS_SELECTOR, utils::segment::read_fs().flags))
 		{
 			LOG_ERROR("Failed to write guest FS selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_GS_SELECTOR, utils::segment::read_gs().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_GS_SELECTOR, utils::segment::read_gs().flags))
 		{
 			LOG_ERROR("Failed to write guest GS selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_LDTR_SELECTOR, utils::segment::read_ldtr().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_LDTR_SELECTOR, utils::segment::read_ldtr().flags))
 		{
 			LOG_ERROR("Failed to write guest LDTR selector to VMCS");
 			return false;
 		}
 
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_TR_SELECTOR, utils::segment::read_tr().index))
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_TR_SELECTOR, utils::segment::read_tr().flags))
 		{
 			LOG_ERROR("Failed to write guest TR selector to VMCS");
 			return false;
