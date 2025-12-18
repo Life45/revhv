@@ -2,6 +2,7 @@
 #include "includes.h"
 #include "gdt.h"
 #include "idt.h"
+#include "exception.h"
 
 namespace hv::vcpu
 {
@@ -184,6 +185,8 @@ namespace hv::vcpu
 		guest_context* guest_context;
 
 		size_t core_id;
+
+		exception::exception_info exception_info;
 	};
 
 	bool virtualize(vcpu* vcpu);

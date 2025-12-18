@@ -132,6 +132,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="exception.h" />
+    <ClInclude Include="exception_wrappers.h" />
     <ClInclude Include="gdt.h" />
     <ClInclude Include="hv.h" />
     <ClInclude Include="idt.h" />
@@ -147,6 +148,7 @@
     <ClInclude Include="vmx.h" />
   </ItemGroup>
   <ItemGroup>
+    <MASM Include="exception_wrappers.asm" />
     <MASM Include="isr.asm" />
     <MASM Include="utils.asm" />
     <MASM Include="vmexit_stub.asm" />

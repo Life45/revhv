@@ -1,6 +1,11 @@
 #pragma once
 #include "includes.h"
-#include "vcpu.h"
+
+// Forward declaration to avoid circular dependency with `vcpu.h`.
+namespace hv::vcpu
+{
+	struct vcpu;
+}
 
 namespace hv::exception
 {
@@ -8,11 +13,11 @@ namespace hv::exception
 	struct machine_frame
 	{
 		uint64_t error_code;
-		uint64_t ss;
-		uint64_t rsp;
-		uint64_t rflags;
-		uint64_t cs;
 		uint64_t rip;
+		uint64_t cs;
+		uint64_t rflags;
+		uint64_t rsp;
+		uint64_t ss;
 	};
 
 	// @note: In case this is modified, make sure to update the isr.asm file
@@ -127,6 +132,14 @@ namespace hv::exception
 		uint64_t vector;
 
 		machine_frame machine_frame;
+	};
+
+	struct exception_info
+	{
+		uint64_t exception_vector;
+		uint64_t error_code;
+		uint64_t additional_info1;
+		bool exception_occurred;
 	};
 
 	void handle_exception(trap_frame* trap_frame, vcpu::vcpu* vcpu);

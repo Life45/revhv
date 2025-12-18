@@ -27,4 +27,13 @@ namespace hv::isr
 		void isr_20();
 		void isr_21();
 	}
+
+	/// @brief Checks if a vector has an error code
+	/// @param vector Vector to check
+	/// @return True if the vector has an error code, false otherwise
+	inline bool vector_has_error_code(uint16_t vector)
+	{
+		// #DF, #TS, #NP, #SS, #GP, #PF, #AC, #CP
+		return vector == 8 || vector == 10 || vector == 11 || vector == 12 || vector == 13 || vector == 14 || vector == 17 || vector == 21;
+	}
 }  // namespace hv::isr

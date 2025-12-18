@@ -12,6 +12,11 @@ namespace utils
 		value &= ~(1ull << bit);
 	}
 
+	inline bool is_bit_set(const uint64_t value, const uint64_t bit)
+	{
+		return (value & (1ull << bit)) != 0;
+	}
+
 	constexpr uint64_t canonicalize(const uint64_t va)
 	{
 		constexpr uint64_t canonical_high = 0xFFFF000000000000ULL;

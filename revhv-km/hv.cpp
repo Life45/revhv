@@ -4,12 +4,12 @@ namespace hv
 {
 	hypervisor g_hv;
 
-	static bool allocate_vpcus()
+	static bool allocate_vcpus()
 	{
 		auto logicalProcessorCount = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
 
 		g_hv.vcpu_count = logicalProcessorCount;
-		g_hv.vcpus = reinterpret_cast<vcpu::vcpu*>(ExAllocatePoolWithTag(NonPagedPoolNx, logicalProcessorCount * sizeof(vcpu::vcpu), 'REVH'));
+		g_hv.vcpus = reinterpret_cast<vcpu::vcpu*>(ExAllocatePoolWithTag(NonPagedPoolNx, logicalProcessorCount * sizeof(vcpu::vcpu), hv::pool_tag));
 		if (!g_hv.vcpus)
 		{
 			LOG_ERROR("Failed to allocate vCPUs");
@@ -26,7 +26,7 @@ namespace hv
 		g_hv = {0};
 		g_hv.system_cr3.flags = __readcr3();
 
-		if (!allocate_vpcus())
+		if (!allocate_vcpus())
 		{
 			LOG_ERROR("Failed to allocate vCPUs");
 			return false;

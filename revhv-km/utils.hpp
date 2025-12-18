@@ -22,6 +22,12 @@ namespace utils
 	template <typename T>
 	void clear_bit(T& value, const uint64_t bit);
 
+	/// @brief Checks if a bit is set in the value
+	/// @param value Value to check
+	/// @param bit Bit to check
+	/// @return True if the bit is set, false otherwise
+	bool is_bit_set(const uint64_t value, const uint64_t bit);
+
 	/// @brief Executes a function on each CPU core
 	/// @tparam Func Function type to execute
 	/// @param func Function to execute on each CPU core

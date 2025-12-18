@@ -85,4 +85,45 @@ namespace hv::vmx
 		}
 		return value;
 	}
+
+	/// @brief Clears the VM-entry interruption information field
+	inline void clear_vmentry_interrupt_info()
+	{
+		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, 0);
+	}
+
+	/// @brief Gets the CPL of the guest
+	/// @return CPL of the guest
+	inline uint16_t get_guest_cpl()
+	{
+		vmx_segment_access_rights ss = {0};
+		ss.flags = vmx_vmread(VMCS_GUEST_SS_ACCESS_RIGHTS);
+		return ss.descriptor_privilege_level;
+	}
+
+	/// @brief Injects a hardware exception with an error code
+	/// @param vector Vector of the exception
+	/// @param error_code Error code of the exception
+	inline void inject_hw_exception(uint16_t vector, uint16_t error_code)
+	{
+		vmentry_interrupt_information interrupt_info = {0};
+		interrupt_info.vector = vector;
+		interrupt_info.interruption_type = hardware_exception;
+		interrupt_info.deliver_error_code = 1;
+		interrupt_info.valid = 1;
+		vmx_vmwrite(VMCS_CTRL_VMENTRY_EXCEPTION_ERROR_CODE, error_code);
+		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
+	}
+
+	/// @brief Injects a hardware exception
+	/// @param vector Vector of the exception
+	inline void inject_hw_exception(uint16_t vector)
+	{
+		vmentry_interrupt_information interrupt_info = {0};
+		interrupt_info.vector = vector;
+		interrupt_info.interruption_type = hardware_exception;
+		interrupt_info.deliver_error_code = 0;
+		interrupt_info.valid = 1;
+		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
+	}
 }  // namespace hv::vmx

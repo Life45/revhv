@@ -5,6 +5,7 @@
 
 namespace hv
 {
+	constexpr ULONG pool_tag = 'REVH';
 	struct hypervisor
 	{
 		memory::host_page_tables host_page_tables;
