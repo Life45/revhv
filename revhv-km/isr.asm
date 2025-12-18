@@ -25,6 +25,9 @@ generic_isr proc
     ; second argument is the vcpu pointer (fsbase)
     rdfsbase rdx
 
+    ; in IA-32e mode, stack is 16 bytes aligned, as well as the stack frame
+    ; + 15 GPRs + vector, we're still 16 bytes aligned so we just allocate shadow stack space
+
     sub rsp, 20h
     call ?handle_exception@exception@hv@@YAXPEAUtrap_frame@12@PEAUvcpu@42@@Z
     add rsp, 20h
