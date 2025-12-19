@@ -54,6 +54,7 @@ namespace logging
 
 	void log_fmt_print(log_level level, const char* fmt, ...)
 	{
+		// TODO: Synchronize access, multi-core prints gibberish otherwise
 		char buffer[512] = {0};
 
 		va_list args;

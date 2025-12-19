@@ -44,6 +44,7 @@ namespace hv::gdt
 		host_tr_descriptor->base_address_middle = (tss_base >> 16) & 0xFF;
 		host_tr_descriptor->base_address_high = (tss_base >> 24) & 0xFF;
 		host_tr_descriptor->base_address_upper = (tss_base >> 32);
+		// TODO: does below bitwise operations make sense?
 		uint16_t tss_limit = sizeof(task_state_segment_64) - 1;
 		host_tr_descriptor->segment_limit_low = tss_limit & 0xFFFF;
 		host_tr_descriptor->segment_limit_high = (tss_limit >> 16) & 0xF;
