@@ -126,4 +126,14 @@ namespace hv::vmx
 		interrupt_info.valid = 1;
 		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
 	}
+
+	/// @brief Injects a NMI
+	inline void inject_nmi()
+	{
+		vmentry_interrupt_information interrupt_info = {0};
+		interrupt_info.vector = nmi;
+		interrupt_info.interruption_type = non_maskable_interrupt;
+		interrupt_info.valid = 1;
+		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
+	}
 }  // namespace hv::vmx

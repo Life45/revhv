@@ -1,5 +1,6 @@
 #include "vmexit.h"
 #include "vmx.h"
+#include "vmcs.h"
 #include "serial.h"
 #include "utils.hpp"
 #include "exception_wrappers.h"
@@ -206,6 +207,36 @@ namespace hv::vmexit
 		advance_guest_rip();
 	}
 
+	static void handle_nmi(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		// we should normally check the interruptibility state to see if we can inject the NMI now or need to wait
+		// however for consistency, we'll always enqueue the NMI and let the nmi window handler handle it
+
+		// enqueue the NMI to be injected into the guest when NMIs are unblocked
+		vcpu->queued_nmi_count++;
+
+		// enable NMI window exiting
+		vmcs::enable_nmi_window_exiting();
+	}
+
+	static void handle_nmi_window(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		--vcpu->queued_nmi_count;
+
+		// inject the NMI into the guest
+		vmx::inject_nmi();
+
+		if (vcpu->queued_nmi_count == 0)
+		{
+			// disable NMI window exiting
+			vmcs::disable_nmi_window_exiting();
+
+			// in case a host NMI occurred while we were handling the NMI window, we need to re-enable NMI window exiting
+			if (vcpu->queued_nmi_count != 0)
+				vmcs::enable_nmi_window_exiting();
+		}
+	}
+
 	static void handle_vmx_instruction(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		// Inject #UD for all VMX instructions
@@ -247,6 +278,12 @@ namespace hv::vmexit
 			break;
 		case VMX_EXIT_REASON_EXECUTE_GETSEC:
 			handle_getsec(guest_context, vcpu);
+			break;
+		case VMX_EXIT_REASON_NMI_WINDOW:
+			handle_nmi_window(guest_context, vcpu);
+			break;
+		case VMX_EXIT_REASON_EXCEPTION_OR_NMI:	// We don't exit for other exceptions, only NMIs
+			handle_nmi(guest_context, vcpu);
 			break;
 		case VMX_EXIT_REASON_EXECUTE_INVEPT:
 		case VMX_EXIT_REASON_EXECUTE_INVVPID:

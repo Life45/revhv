@@ -187,6 +187,9 @@ namespace hv::vcpu
 		size_t core_id;
 
 		exception::exception_info exception_info;
+
+		// queued NMIs to be injected into the guest
+		size_t queued_nmi_count;
 	};
 
 	bool virtualize(vcpu* vcpu);

@@ -1,5 +1,6 @@
 #include "exception.h"
 #include "vcpu.h"
+#include "vmcs.h"
 
 namespace hv::exception
 {
@@ -81,11 +82,13 @@ namespace hv::exception
 
 	static void handle_nmi(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)
 	{
-		// TODO: Handle NMIs properly
 		LOG_ERROR("Host NMI occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
-		log_trap_frame(trap_frame);
-		// TODO: Fail appropriately
-		__halt();
+
+		// Enqueue the NMI to be injected into the guest when NMIs are unblocked
+		vcpu->queued_nmi_count++;
+
+		// Enable NMI window exiting
+		vmcs::enable_nmi_window_exiting();
 	}
 
 	void handle_exception(trap_frame* trap_frame, vcpu::vcpu* vcpu)

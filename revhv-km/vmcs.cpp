@@ -15,8 +15,8 @@ namespace hv::vmcs
 		ia32_vmx_pinbased_ctls_register desiredPinBasedCtls = {0};
 
 		desiredPinBasedCtls.external_interrupt_exiting = 0;
-		desiredPinBasedCtls.nmi_exiting = 0;
-		desiredPinBasedCtls.virtual_nmi = 0;
+		desiredPinBasedCtls.nmi_exiting = 1;
+		desiredPinBasedCtls.virtual_nmi = 1;
 		desiredPinBasedCtls.activate_vmx_preemption_timer = 0;
 		desiredPinBasedCtls.process_posted_interrupts = 0;
 
@@ -847,6 +847,22 @@ namespace hv::vmcs
 		}
 
 		return true;
+	}
+
+	void enable_nmi_window_exiting()
+	{
+		ia32_vmx_procbased_ctls_register proc_based = {0};
+		proc_based.flags = vmx::vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS);
+		proc_based.nmi_window_exiting = 1;
+		write_control_field(proc_based.flags, VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, IA32_VMX_PROCBASED_CTLS, IA32_VMX_TRUE_PROCBASED_CTLS);
+	}
+
+	void disable_nmi_window_exiting()
+	{
+		ia32_vmx_procbased_ctls_register proc_based = {0};
+		proc_based.flags = vmx::vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS);
+		proc_based.nmi_window_exiting = 0;
+		write_control_field(proc_based.flags, VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, IA32_VMX_PROCBASED_CTLS, IA32_VMX_TRUE_PROCBASED_CTLS);
 	}
 
 	bool write_control_fields(vcpu::vcpu* vcpu)

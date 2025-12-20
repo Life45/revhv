@@ -17,6 +17,12 @@ namespace hv::vmcs
 	/// @return True if the VMCS region was loaded successfully, false otherwise
 	bool load_vmcs(vcpu::vcpu* vcpu);
 
+	/// @brief Enables NMI window exiting
+	void enable_nmi_window_exiting();
+
+	/// @brief Disables NMI window exiting
+	void disable_nmi_window_exiting();
+
 	/// @brief Writes the control fields to the VMCS region
 	/// @param vcpu Current vcpu
 	bool write_control_fields(vcpu::vcpu* vcpu);
