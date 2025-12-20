@@ -10,6 +10,7 @@ namespace hv::memory
 	/// @return Pointer to the allocated memory virtual address
 	static void* alloc_host_pt()
 	{
+		// TODO: Track these to free if hypervisor is stopped
 		void* va = MmAllocateContiguousMemorySpecifyCache(0x1000, {.QuadPart = 0}, {.QuadPart = static_cast<LONGLONG>(~0ULL)}, {.QuadPart = 0}, MmCached);
 		if (!va)
 		{
@@ -30,6 +31,8 @@ namespace hv::memory
 	/// @return True if the page table entry was found, false otherwise
 	static bool get_system_pte_for_va(const void* virtual_address, const cr3& system_cr3, pte_64& out_pt, page_table_level& out_level)
 	{
+		// TODO: Don't use MmGetVirtualForPhysical
+
 		pml4_virtual_address va = {0};
 		va.virtual_address = const_cast<void*>(virtual_address);
 
@@ -102,6 +105,8 @@ namespace hv::memory
 	/// @return True if the virtual address range was mapped successfully, false otherwise
 	static bool map_va_range_to_host(void* virtual_address, size_t size, const cr3& system_cr3, host_page_tables& host_page_tables)
 	{
+		// TODO: Don't use MmGetVirtualForPhysical, also keep a cache of PFNs
+
 		// Start at the virtual address range start
 		// No alignment is done here, as get_system_pte_for_va works with indexes only. Final alignment is done in the loop below.
 		void* current_address = virtual_address;
