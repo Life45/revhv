@@ -118,12 +118,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="exception.cpp" />
+    <ClCompile Include="format.cpp" />
     <ClCompile Include="gdt.cpp" />
     <ClCompile Include="hv.cpp" />
     <ClCompile Include="idt.cpp" />
     <ClCompile Include="logging.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="memory.cpp" />
+    <ClCompile Include="pe.cpp" />
     <ClCompile Include="serial.cpp" />
     <ClCompile Include="vcpu.cpp" />
     <ClCompile Include="vmcs.cpp" />
@@ -133,6 +135,7 @@
   <ItemGroup>
     <ClInclude Include="exception.h" />
     <ClInclude Include="exception_wrappers.h" />
+    <ClInclude Include="format.h" />
     <ClInclude Include="gdt.h" />
     <ClInclude Include="hv.h" />
     <ClInclude Include="idt.h" />
@@ -140,6 +143,7 @@
     <ClInclude Include="isr.h" />
     <ClInclude Include="logging.h" />
     <ClInclude Include="memory.h" />
+    <ClInclude Include="pe.h" />
     <ClInclude Include="serial.h" />
     <ClInclude Include="utils.hpp" />
     <ClInclude Include="vcpu.h" />

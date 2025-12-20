@@ -9,7 +9,7 @@ namespace hv
 		auto logicalProcessorCount = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
 
 		g_hv.vcpu_count = logicalProcessorCount;
-		g_hv.vcpus = reinterpret_cast<vcpu::vcpu*>(ExAllocatePoolWithTag(NonPagedPoolNx, logicalProcessorCount * sizeof(vcpu::vcpu), hv::pool_tag));
+		g_hv.vcpus = reinterpret_cast<vcpu::vcpu*>(memory::allocate_map_nx_pool(logicalProcessorCount * sizeof(vcpu::vcpu), g_hv.system_cr3));
 		if (!g_hv.vcpus)
 		{
 			LOG_ERROR("Failed to allocate vCPUs");

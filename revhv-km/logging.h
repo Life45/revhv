@@ -1,4 +1,5 @@
 #pragma once
+#include "sync.hpp"
 
 #define LOG_VERBOSE(fmt, ...) logging::log_fmt_print(logging::log_level_verbose, fmt, ##__VA_ARGS__)
 #define LOG_INFO(fmt, ...) logging::log_fmt_print(logging::log_level_info, fmt, ##__VA_ARGS__)
