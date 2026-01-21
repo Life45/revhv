@@ -1,6 +1,7 @@
 #include "vcpu.h"
 #include "vmx.h"
 #include "vmcs.h"
+#include "utils.hpp"
 
 namespace hv::vcpu
 {
@@ -13,6 +14,30 @@ namespace hv::vcpu
 		}
 
 		vmx::enable_vmx();
+		// Capture current state for restoration in case of host double fault
+		_sgdt(&vcpu->restore_context.gdtr);
+		__sidt(&vcpu->restore_context.idtr);
+		vcpu->restore_context.cr3 = __readcr3();
+
+		vcpu->restore_context.cs = utils::segment::read_cs();
+		vcpu->restore_context.ss = utils::segment::read_ss();
+		vcpu->restore_context.ds = utils::segment::read_ds();
+		vcpu->restore_context.es = utils::segment::read_es();
+		vcpu->restore_context.fs = utils::segment::read_fs();
+		vcpu->restore_context.gs = utils::segment::read_gs();
+		vcpu->restore_context.tr = utils::segment::read_tr();
+		vcpu->restore_context.ldtr = utils::segment::read_ldtr();
+
+		vcpu->restore_context.fs_base = __readmsr(IA32_FS_BASE);
+		vcpu->restore_context.gs_base = __readmsr(IA32_GS_BASE);
+		vcpu->restore_context.kernel_gs_base = __readmsr(IA32_KERNEL_GS_BASE);
+
+		vcpu->restore_context.efer = __readmsr(IA32_EFER);
+		vcpu->restore_context.pat = __readmsr(IA32_PAT);
+
+		vcpu->restore_context.sysenter_cs = __readmsr(IA32_SYSENTER_CS);
+		vcpu->restore_context.sysenter_esp = __readmsr(IA32_SYSENTER_ESP);
+		vcpu->restore_context.sysenter_eip = __readmsr(IA32_SYSENTER_EIP);
 
 		if (!vmx::enter_vmx_operation(vcpu))
 		{

@@ -40,4 +40,34 @@ read_ldtr proc
     ret
 read_ldtr endp
 
+write_ds proc
+    mov ds, cx
+    ret
+write_ds endp
+
+write_es proc
+    mov es, cx
+    ret
+write_es endp
+
+write_fs proc
+    mov fs, cx
+    ret
+write_fs endp
+
+write_gs proc
+    mov gs, cx
+    ret
+write_gs endp
+
+write_tr proc
+    ltr cx
+    ret
+write_tr endp
+
+write_ldtr proc
+    lldt cx
+    ret
+write_ldtr endp
+
 end

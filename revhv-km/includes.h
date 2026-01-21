@@ -4,3 +4,4 @@
 #include <ia32.hpp>
 #include "logging.h"
 extern "C" __MACHINE(void _sgdt(void*));
+extern "C" __MACHINE(void _lgdt(const void*));

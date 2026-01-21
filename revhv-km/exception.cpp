@@ -1,6 +1,8 @@
 #include "exception.h"
 #include "vcpu.h"
 #include "vmcs.h"
+#include "utils.hpp"
+#include "vmx.h"
 
 namespace hv::exception
 {
@@ -67,8 +69,53 @@ namespace hv::exception
 	{
 		LOG_ERROR("Host double fault occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
 		log_trap_frame(trap_frame);
-		// TODO: Fail appropriately
-		__halt();
+
+		// Restore context and bugcheck
+		vmx::vmx_vmxoff();
+
+		LOG_INFO("Restoring CR3");
+
+		// Restore CR3 and PAT
+		__writecr3(vcpu->restore_context.cr3);
+		__writemsr(IA32_PAT, vcpu->restore_context.pat);
+
+		// Flush TLB
+		__wbinvd();	 // Write back and invalidate cache
+		auto cr4 = __readcr4();
+		__writecr4(cr4 & ~(1ULL << 7));	 // Clear PGE flag
+		__writecr4(cr4);				 // Set PGE flag again
+
+		LOG_INFO("Restoring MSRs");
+
+		// Restore other MSRs
+		__writemsr(IA32_EFER, vcpu->restore_context.efer);
+		__writemsr(IA32_SYSENTER_CS, vcpu->restore_context.sysenter_cs);
+		__writemsr(IA32_SYSENTER_ESP, vcpu->restore_context.sysenter_esp);
+		__writemsr(IA32_SYSENTER_EIP, vcpu->restore_context.sysenter_eip);
+
+		LOG_INFO("Restoring GDT and IDT");
+		// Restore GDT and IDT
+		_lgdt(&vcpu->restore_context.gdtr);
+		__lidt(&vcpu->restore_context.idtr);
+
+		LOG_INFO("Restoring segments");
+		// Restore segments
+		LOG_INFO("Restoring DS");
+		utils::segment::write_ds(vcpu->restore_context.ds.flags);
+		LOG_INFO("Restoring ES");
+		utils::segment::write_es(vcpu->restore_context.es.flags);
+		LOG_INFO("Restoring FS");
+		utils::segment::write_fs(vcpu->restore_context.fs.flags);
+		LOG_INFO("Restoring GS");
+		utils::segment::write_gs(vcpu->restore_context.gs.flags);
+
+		// Restore MSR-based segment bases
+		__writemsr(IA32_FS_BASE, vcpu->restore_context.fs_base);
+		__writemsr(IA32_GS_BASE, vcpu->restore_context.gs_base);
+		__writemsr(IA32_KERNEL_GS_BASE, vcpu->restore_context.kernel_gs_base);
+
+		LOG_INFO("Bugchecking");
+		KeBugCheckEx(UNEXPECTED_KERNEL_MODE_TRAP, EXCEPTION_DOUBLE_FAULT, 0xDEADDEAD, reinterpret_cast<ULONG_PTR>(trap_frame), vcpu->core_id);
 	}
 
 	static void handle_mc(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)

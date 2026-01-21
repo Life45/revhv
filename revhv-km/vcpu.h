@@ -157,6 +157,33 @@ namespace hv::vcpu
 		uint32_t _pad[3];
 	};
 
+	struct restore_context
+	{
+		segment_descriptor_register_64 gdtr;
+		segment_descriptor_register_64 idtr;
+		uint64_t cr3;
+
+		segment_selector cs;
+		segment_selector ss;
+		segment_selector ds;
+		segment_selector es;
+		segment_selector fs;
+		segment_selector gs;
+		segment_selector tr;
+		segment_selector ldtr;
+
+		uint64_t fs_base;
+		uint64_t gs_base;
+		uint64_t kernel_gs_base;
+
+		uint64_t efer;
+		uint64_t pat;
+
+		uint64_t sysenter_cs;
+		uint64_t sysenter_esp;
+		uint64_t sysenter_eip;
+	};
+
 	struct vcpu
 	{
 		alignas(0x1000) uint8_t host_stack[host_stack_size];
@@ -183,6 +210,8 @@ namespace hv::vcpu
 		alignas(0x1000) vmx_msr_bitmap msr_bitmap;
 
 		guest_context* guest_context;
+
+		restore_context restore_context;
 
 		size_t core_id;
 

@@ -58,6 +58,13 @@ namespace utils
 			segment_selector read_gs();
 			segment_selector read_tr();
 			segment_selector read_ldtr();
+
+			void write_ds(uint16_t selector);
+			void write_es(uint16_t selector);
+			void write_fs(uint16_t selector);
+			void write_gs(uint16_t selector);
+			void write_tr(uint16_t selector);
+			void write_ldtr(uint16_t selector);
 		}
 	}  // namespace segment
 }  // namespace utils
