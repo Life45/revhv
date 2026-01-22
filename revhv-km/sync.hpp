@@ -3,6 +3,34 @@
 
 namespace sync
 {
+	struct atomic_int
+	{
+		volatile long value;
+	};
+
+	__forceinline long atomic_load(const atomic_int& v) noexcept
+	{
+		return _InterlockedCompareExchange(const_cast<volatile long*>(&v.value), 0, 0);
+	}
+
+	__forceinline void atomic_store(atomic_int& v, long new_value) noexcept
+	{
+		_InterlockedExchange(&v.value, new_value);
+	}
+
+	__forceinline long atomic_increment(atomic_int& v) noexcept
+	{
+		return _InterlockedIncrement(&v.value);
+	}
+	__forceinline long atomic_decrement(atomic_int& v) noexcept
+	{
+		return _InterlockedDecrement(&v.value);
+	}
+
+	__forceinline long atomic_compare_exchange(atomic_int& v, long new_value, long expected_value) noexcept
+	{
+		return _InterlockedCompareExchange(&v.value, new_value, expected_value);
+	}
 	class spin_lock
 	{
 	private:
@@ -37,4 +65,5 @@ namespace sync
 		scoped_spin_lock(const scoped_spin_lock&) = delete;
 		scoped_spin_lock& operator=(const scoped_spin_lock&) = delete;
 	};
+
 }  // namespace sync

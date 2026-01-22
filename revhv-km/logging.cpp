@@ -2,6 +2,8 @@
 #include "serial.h"
 #include "format.h"
 #include <stdarg.h>
+#include "sync.hpp"
+#include "hv.h"
 
 namespace logging
 {
@@ -91,6 +93,13 @@ namespace logging
 			return;
 		}
 		va_end(args);
+
+		// If a crash is in progress, avoid taking the lock to prevent deadlocks
+		if (sync::atomic_load(hv::g_hv.crash_in_progress) != 0)
+		{
+			serial::write_string(serial::SERIAL_COM_1, buffer);
+			return;
+		}
 
 		sync::scoped_spin_lock lock(serial_lock);
 		serial::write_string(serial::SERIAL_COM_1, buffer);

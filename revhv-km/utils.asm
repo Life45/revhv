@@ -1,5 +1,36 @@
 .code
 
+cpu_hang_unblock_nmi proc
+    ; RCX contains CS selector
+    
+    ; 1. SS
+    push 0
+    
+    ; 2. RSP (Use current stack)
+    push rsp
+    
+    ; 3. RFLAGS
+    pushfq
+    pop rax
+    or rax, 200h ; Set IF (Interrupt Flag) so we can accept normal IPIs/NMIs
+    push rax
+    
+    ; 4. CS (Target OS CS)
+    and rcx, 0FFFFh ; Ensure we only use the selector part
+    push rcx
+    
+    ; 5. RIP (Target loop)
+    lea rax, hang_loop
+    push rax
+    
+    iretq
+    
+hang_loop:
+    pause
+    jmp hang_loop
+    
+cpu_hang_unblock_nmi endp
+
 read_cs proc
     mov ax, cs
     ret

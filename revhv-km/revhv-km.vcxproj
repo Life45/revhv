@@ -117,6 +117,8 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="apic.cpp" />
+    <ClCompile Include="error.cpp" />
     <ClCompile Include="exception.cpp" />
     <ClCompile Include="format.cpp" />
     <ClCompile Include="gdt.cpp" />
@@ -133,6 +135,8 @@
     <ClCompile Include="vmx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="apic.h" />
+    <ClInclude Include="error.h" />
     <ClInclude Include="exception.h" />
     <ClInclude Include="exception_wrappers.h" />
     <ClInclude Include="format.h" />

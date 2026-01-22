@@ -75,4 +75,40 @@ namespace hv::vcpu
 		return true;
 	}
 
+	void devirtualize(vcpu* vcpu)
+	{
+		vmx::vmx_vmxoff();
+
+		// Restore CR3 and PAT
+		__writecr3(vcpu->restore_context.cr3);
+		__writemsr(IA32_PAT, vcpu->restore_context.pat);
+
+		// Flush TLB
+		__wbinvd();	 // Write back and invalidate cache
+		auto cr4 = __readcr4();
+		__writecr4(cr4 & ~(1ULL << 7));	 // Clear PGE flag
+		__writecr4(cr4);				 // Set PGE flag again
+
+		// Restore other MSRs
+		__writemsr(IA32_EFER, vcpu->restore_context.efer);
+		__writemsr(IA32_SYSENTER_CS, vcpu->restore_context.sysenter_cs);
+		__writemsr(IA32_SYSENTER_ESP, vcpu->restore_context.sysenter_esp);
+		__writemsr(IA32_SYSENTER_EIP, vcpu->restore_context.sysenter_eip);
+
+		// Restore GDT and IDT
+		_lgdt(&vcpu->restore_context.gdtr);
+		__lidt(&vcpu->restore_context.idtr);
+
+		// Restore segments
+		utils::segment::write_ds(vcpu->restore_context.ds.flags);
+		utils::segment::write_es(vcpu->restore_context.es.flags);
+		utils::segment::write_fs(vcpu->restore_context.fs.flags);
+		utils::segment::write_gs(vcpu->restore_context.gs.flags);
+
+		// Restore MSR-based segment bases
+		__writemsr(IA32_FS_BASE, vcpu->restore_context.fs_base);
+		__writemsr(IA32_GS_BASE, vcpu->restore_context.gs_base);
+		__writemsr(IA32_KERNEL_GS_BASE, vcpu->restore_context.kernel_gs_base);
+	}
+
 }  // namespace hv::vcpu

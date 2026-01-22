@@ -23,8 +23,12 @@ namespace hv
 
 	bool start()
 	{
-		g_hv = {0};
+		memset(&g_hv, 0, sizeof(g_hv));
+
 		g_hv.system_cr3.flags = __readcr3();
+
+		sync::atomic_store(g_hv.crash_in_progress, 0);
+		sync::atomic_store(g_hv.crash_ack_core_count, 0);
 
 		if (!allocate_vcpus())
 		{

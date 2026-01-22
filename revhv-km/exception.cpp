@@ -3,7 +3,7 @@
 #include "vmcs.h"
 #include "utils.hpp"
 #include "vmx.h"
-
+#include "error.h"
 namespace hv::exception
 {
 	static void log_trap_frame(const trap_frame* trap_frame)
@@ -18,15 +18,15 @@ namespace hv::exception
 		{
 			LOG_ERROR("Unhandled host exception with vector %llx occurred on vCPU %lu", trap_frame->vector, vcpu->core_id);
 			log_trap_frame(trap_frame);
-			// TODO: Fail appropriately
-			__halt();
+			// Raise an unrecoverable host error
+			error::unrecoverable_host_error(vcpu);
 		}
 
 		LOG_ERROR("An expected exception occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
 		LOG_ERROR("Generic exceptions cannot be handled by an exception handler. Add a specific handler for this exception vector.");
 		log_trap_frame(trap_frame);
-		// TODO: Fail appropriately
-		__halt();
+		// Raise an unrecoverable host error
+		error::unrecoverable_host_error(vcpu);
 	}
 
 	static void handle_gp(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)
@@ -35,8 +35,8 @@ namespace hv::exception
 		{
 			LOG_ERROR("Unhandled host general protection exception occurred on vCPU %lu", vcpu->core_id);
 			log_trap_frame(trap_frame);
-			// TODO: Fail appropriately
-			__halt();
+			// Raise an unrecoverable host error
+			error::unrecoverable_host_error(vcpu);
 		}
 
 		vcpu->exception_info.exception_occurred = true;
@@ -53,8 +53,8 @@ namespace hv::exception
 		{
 			LOG_ERROR("Unhandled host invalid opcode exception occurred on vCPU %lu", vcpu->core_id);
 			log_trap_frame(trap_frame);
-			// TODO: Fail appropriately
-			__halt();
+			// Raise an unrecoverable host error
+			error::unrecoverable_host_error(vcpu);
 		}
 
 		vcpu->exception_info.exception_occurred = true;
@@ -70,52 +70,8 @@ namespace hv::exception
 		LOG_ERROR("Host double fault occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
 		log_trap_frame(trap_frame);
 
-		// Restore context and bugcheck
-		vmx::vmx_vmxoff();
-
-		LOG_INFO("Restoring CR3");
-
-		// Restore CR3 and PAT
-		__writecr3(vcpu->restore_context.cr3);
-		__writemsr(IA32_PAT, vcpu->restore_context.pat);
-
-		// Flush TLB
-		__wbinvd();	 // Write back and invalidate cache
-		auto cr4 = __readcr4();
-		__writecr4(cr4 & ~(1ULL << 7));	 // Clear PGE flag
-		__writecr4(cr4);				 // Set PGE flag again
-
-		LOG_INFO("Restoring MSRs");
-
-		// Restore other MSRs
-		__writemsr(IA32_EFER, vcpu->restore_context.efer);
-		__writemsr(IA32_SYSENTER_CS, vcpu->restore_context.sysenter_cs);
-		__writemsr(IA32_SYSENTER_ESP, vcpu->restore_context.sysenter_esp);
-		__writemsr(IA32_SYSENTER_EIP, vcpu->restore_context.sysenter_eip);
-
-		LOG_INFO("Restoring GDT and IDT");
-		// Restore GDT and IDT
-		_lgdt(&vcpu->restore_context.gdtr);
-		__lidt(&vcpu->restore_context.idtr);
-
-		LOG_INFO("Restoring segments");
-		// Restore segments
-		LOG_INFO("Restoring DS");
-		utils::segment::write_ds(vcpu->restore_context.ds.flags);
-		LOG_INFO("Restoring ES");
-		utils::segment::write_es(vcpu->restore_context.es.flags);
-		LOG_INFO("Restoring FS");
-		utils::segment::write_fs(vcpu->restore_context.fs.flags);
-		LOG_INFO("Restoring GS");
-		utils::segment::write_gs(vcpu->restore_context.gs.flags);
-
-		// Restore MSR-based segment bases
-		__writemsr(IA32_FS_BASE, vcpu->restore_context.fs_base);
-		__writemsr(IA32_GS_BASE, vcpu->restore_context.gs_base);
-		__writemsr(IA32_KERNEL_GS_BASE, vcpu->restore_context.kernel_gs_base);
-
-		LOG_INFO("Bugchecking");
-		KeBugCheckEx(UNEXPECTED_KERNEL_MODE_TRAP, EXCEPTION_DOUBLE_FAULT, 0xDEADDEAD, reinterpret_cast<ULONG_PTR>(trap_frame), vcpu->core_id);
+		// Raise an unrecoverable host error
+		error::unrecoverable_host_error(vcpu);
 	}
 
 	static void handle_mc(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)
@@ -123,12 +79,16 @@ namespace hv::exception
 		// TODO: More information about machine check
 		LOG_ERROR("Host machine check occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
 		log_trap_frame(trap_frame);
-		// TODO: Fail appropriately
-		__halt();
+
+		// Raise an unrecoverable host error
+		error::unrecoverable_host_error(vcpu);
 	}
 
 	static void handle_nmi(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)
 	{
+		// If a crash is in progress, devirtualize and give control back to the host OS
+		error::give_control_on_unrecoverable_error(vcpu);
+
 		LOG_ERROR("Host NMI occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
 
 		// Enqueue the NMI to be injected into the guest when NMIs are unblocked
@@ -140,8 +100,6 @@ namespace hv::exception
 
 	void handle_exception(trap_frame* trap_frame, vcpu::vcpu* vcpu)
 	{
-		LOG_ERROR("Exception occurred on vCPU %lu, vector: %llx", vcpu->core_id, trap_frame->vector);
-
 		// It's an expected exception if RSI is set to the RIP of the instruction that caused the exception
 		bool expected_exception = trap_frame->rsi == trap_frame->machine_frame.rip;
 
@@ -182,8 +140,8 @@ namespace hv::exception
 		default:
 			LOG_ERROR("Unknown exception vector: %llx", trap_frame->vector);
 			log_trap_frame(trap_frame);
-			// TODO: Fail appropriately
-			__halt();
+			// Raise an unrecoverable host error
+			error::unrecoverable_host_error(vcpu);
 			break;
 		}
 	}

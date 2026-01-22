@@ -223,5 +223,7 @@ namespace hv::vcpu
 
 	bool virtualize(vcpu* vcpu);
 
+	/// @brief Devirtualize current vCPU and restore (most) context to host OS
+	/// @param vcpu Pointer to the vCPU structure
 	void devirtualize(vcpu* vcpu);
 }  // namespace hv::vcpu

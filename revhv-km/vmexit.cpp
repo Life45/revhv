@@ -4,6 +4,7 @@
 #include "serial.h"
 #include "utils.hpp"
 #include "exception_wrappers.h"
+#include "error.h"
 
 namespace hv::vmexit
 {
@@ -209,6 +210,9 @@ namespace hv::vmexit
 
 	static void handle_nmi(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
+		// If a host crash is in progress, devirtualize and give control back to the host OS
+		error::give_control_on_unrecoverable_error(vcpu);
+
 		// we should normally check the interruptibility state to see if we can inject the NMI now or need to wait
 		// however for consistency, we'll always enqueue the NMI and let the nmi window handler handle it
 
