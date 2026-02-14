@@ -118,6 +118,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="apic.cpp" />
+    <ClCompile Include="ept.cpp" />
     <ClCompile Include="error.cpp" />
     <ClCompile Include="exception.cpp" />
     <ClCompile Include="format.cpp" />
@@ -136,6 +137,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="apic.h" />
+    <ClInclude Include="ept.h" />
     <ClInclude Include="error.h" />
     <ClInclude Include="exception.h" />
     <ClInclude Include="exception_wrappers.h" />

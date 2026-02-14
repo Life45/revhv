@@ -72,18 +72,22 @@ namespace serial
 
 	void write_byte(UINT16 portBase, UCHAR data)
 	{
-		// Busy wait until the transmitter holding register is empty.
-		while (!(__inbyte(portBase + SERIAL_LSR) & 0x20))
-		{
-			;
-		}
+		auto spin = 25000UL;
 
-		__outbyte(portBase + SERIAL_THR, data);
+		// Busy wait with bounded retries.
+		while (spin--)
+		{
+			if (__inbyte(portBase + SERIAL_LSR) & 0x20)
+			{
+				__outbyte(portBase + SERIAL_THR, data);
+				return;
+			}
+		}
 	}
 
 	void write_string(UINT16 portBase, const char* string)
 	{
-		for (SIZE_T i = 0; string[i] != '\0'; ++i)
+		for (SIZE_T i = 0; i < 512 && string[i] != '\0'; ++i)
 		{
 			if (string[i] == '\n')
 			{

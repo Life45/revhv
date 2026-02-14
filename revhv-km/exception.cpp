@@ -4,6 +4,9 @@
 #include "utils.hpp"
 #include "vmx.h"
 #include "error.h"
+
+extern "C" void* __ImageBase;
+
 namespace hv::exception
 {
 	static void log_trap_frame(const trap_frame* trap_frame)
@@ -144,5 +147,8 @@ namespace hv::exception
 			error::unrecoverable_host_error(vcpu);
 			break;
 		}
+
+		auto relative = trap_frame->machine_frame.rip - reinterpret_cast<uint64_t>(&__ImageBase);
+		LOG_INFO("Host exception handler done, returning to %p (relative: %p)", trap_frame->machine_frame.rip, relative);
 	}
 }  // namespace hv::exception

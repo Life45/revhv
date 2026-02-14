@@ -8,6 +8,18 @@ namespace utils
 	/// @return Canonicalized virtual address
 	constexpr uint64_t canonicalize(const uint64_t va);
 
+	/// @brief Memset function relying only on intrinsics
+	/// @param dest Destination pointer
+	/// @param value Value to set
+	/// @param size Size of the memory to set
+	void memset(void* dest, uint8_t value, size_t size);
+
+	/// @brief Memcpy function relying only on intrinsics
+	/// @param dest Destination pointer
+	/// @param src Source pointer
+	/// @param size Size of the memory to copy
+	void memcpy(void* dest, const void* src, size_t size);
+
 	/// @brief Sets a bit in the value
 	/// @tparam T Type of the value
 	/// @param value Value to set the bit in

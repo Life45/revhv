@@ -24,6 +24,16 @@ namespace utils
 		return (va & (1ULL << 47)) ? (va | canonical_high) : (va & canonical_low);
 	}
 
+	inline void memset(void* dest, uint8_t value, size_t size)
+	{
+		__stosb(static_cast<uint8_t*>(dest), value, size);
+	}
+
+	inline void memcpy(void* dest, const void* src, size_t size)
+	{
+		__movsb(static_cast<uint8_t*>(dest), static_cast<const uint8_t*>(src), size);
+	}
+
 	template <typename Func>
 	inline void for_each_cpu(Func func)
 	{

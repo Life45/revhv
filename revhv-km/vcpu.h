@@ -3,6 +3,7 @@
 #include "gdt.h"
 #include "idt.h"
 #include "exception.h"
+#include "ept.h"
 
 namespace hv::vcpu
 {
@@ -209,6 +210,10 @@ namespace hv::vcpu
 
 		alignas(0x1000) vmx_msr_bitmap msr_bitmap;
 
+		alignas(0x1000) ept::ept_pages ept_pages;
+
+		ept_pointer eptp;
+
 		guest_context* guest_context;
 
 		restore_context restore_context;
@@ -217,8 +222,10 @@ namespace hv::vcpu
 
 		exception::exception_info exception_info;
 
+		memory::mtrr_state mtrr_state;
+
 		// queued NMIs to be injected into the guest
-		size_t queued_nmi_count;
+		volatile size_t queued_nmi_count;
 	};
 
 	bool virtualize(vcpu* vcpu);

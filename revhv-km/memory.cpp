@@ -369,10 +369,6 @@ namespace hv::memory
 		return true;
 	}
 
-	/// @brief Allocates an NX pool and maps it to the host page tables
-	/// @note Do not use this function after vmlaunch
-	/// @param size Size of the memory to allocate
-	/// @return Pointer to the allocated memory
 	void* allocate_map_nx_pool(size_t size, const cr3& system_cr3)
 	{
 		auto memory = ExAllocatePool2(POOL_FLAG_NON_PAGED, size, pool_tag);
@@ -392,4 +388,161 @@ namespace hv::memory
 
 		return memory;
 	}
+
+	void read_mtrrs(mtrr_state& state)
+	{
+		//
+		//	13.11 Memory Type Range Registers (MTRRs)
+		//
+
+		utils::memset(&state, 0, sizeof(state));
+
+		ia32_mtrr_capabilities_register cap{};
+		cap.flags = __readmsr(IA32_MTRR_CAPABILITIES);
+		state.variable_count = static_cast<uint8_t>(cap.variable_range_count);
+		state.fixed_supported = cap.fixed_range_supported != 0;
+
+		state.def_type.flags = __readmsr(IA32_MTRR_DEF_TYPE);
+
+		if (!state.def_type.mtrr_enable)
+		{
+			LOG_INFO("MTRRs are not enabled on this processor");
+			return;
+		}
+
+		// Fixed range MTRRs
+		if (state.def_type.fixed_range_mtrr_enable && state.fixed_supported)
+		{
+			// 64K fixed range MTRR
+			uint64_t fix64k_msr = __readmsr(IA32_MTRR_FIX64K_00000);
+			for (size_t i = 0; i < 8; i++)
+			{
+				state.fixed[i] = (fix64k_msr >> (i * 8)) & 0xFF;
+			}
+
+			// 16K fixed range MTRRs
+			constexpr uint32_t fix16k_msrs[] = {IA32_MTRR_FIX16K_80000, IA32_MTRR_FIX16K_A0000};
+			for (size_t j = 0; j < 2; j++)
+			{
+				uint64_t fix16k_msr = __readmsr(fix16k_msrs[j]);
+				for (size_t i = 0; i < 8; i++)
+				{
+					state.fixed[8 + j * 8 + i] = (fix16k_msr >> (i * 8)) & 0xFF;
+				}
+			}
+
+			// 4K fixed range MTRRs
+			constexpr uint32_t fix4k_msrs[] = {IA32_MTRR_FIX4K_C0000, IA32_MTRR_FIX4K_C8000, IA32_MTRR_FIX4K_D0000, IA32_MTRR_FIX4K_D8000, IA32_MTRR_FIX4K_E0000, IA32_MTRR_FIX4K_E8000, IA32_MTRR_FIX4K_F0000, IA32_MTRR_FIX4K_F8000};
+			for (size_t j = 0; j < 8; j++)
+			{
+				uint64_t fix4k_msr = __readmsr(fix4k_msrs[j]);
+				for (size_t i = 0; i < 8; i++)
+				{
+					state.fixed[24 + j * 8 + i] = (fix4k_msr >> (i * 8)) & 0xFF;
+				}
+			}
+		}
+
+		// Variable range MTRRs
+		for (size_t i = 0; i < state.variable_count; i++)
+		{
+			state.variable[i].base.flags = __readmsr(IA32_MTRR_PHYSBASE0 + i * 2);
+			state.variable[i].mask.flags = __readmsr(IA32_MTRR_PHYSMASK0 + i * 2);
+		}
+	}
+
+	/// @brief Gets the MTRR memory type for a single physical address
+	/// @param state Reference to an mtrr_state struct containing the MTRR state
+	/// @param physical_address The physical address to get the memory type for
+	/// @return The memory type for the given physical address
+	static uint8_t get_mtrr_memory_type_single(const mtrr_state& state, uint64_t physical_address)
+	{
+		if (!state.def_type.mtrr_enable)
+		{
+			// If MTRRs are not enabled, the entire physical address space is treated as UC
+			return MEMORY_TYPE_UNCACHEABLE;
+		}
+
+		// Check fixed range MTRRs first(if enabled), as they take precedence over variable range MTRRs
+		if (physical_address < 0x100000 && state.fixed_supported && state.def_type.fixed_range_mtrr_enable)
+		{
+			if (physical_address < 0x80000)
+				return state.fixed[physical_address / IA32_MTRR_FIX64K_SIZE];
+			else if (physical_address < 0xC0000)
+				return state.fixed[8 + (physical_address - IA32_MTRR_FIX16K_BASE) / IA32_MTRR_FIX16K_SIZE];
+			else
+				return state.fixed[24 + (physical_address - IA32_MTRR_FIX4K_BASE) / IA32_MTRR_FIX4K_SIZE];
+		}
+
+		// Variable range MTRRs
+		uint8_t final_memory_type = MEMORY_TYPE_INVALID;
+		for (size_t i = 0; i < state.variable_count; i++)
+		{
+			if (!state.variable[i].mask.valid)
+				continue;
+
+			const uint64_t range_mask = state.variable[i].mask.page_frame_number << 12;
+			const uint64_t range_base = state.variable[i].base.page_frame_number << 12;
+
+			if ((physical_address & range_mask) != (range_base & range_mask))
+				continue;
+
+			const uint8_t type = static_cast<uint8_t>(state.variable[i].base.type);
+
+			if (final_memory_type == MEMORY_TYPE_INVALID)
+			{
+				final_memory_type = type;
+				continue;
+			}
+
+			// Overlap precedence rules (13.11.4.1):
+			//  - UC wins over everything.
+			//  - WT + WB = WT.
+			//  - All other overlaps are architecturally undefined; fall back to UC.
+			if (type == MEMORY_TYPE_UNCACHEABLE || final_memory_type == MEMORY_TYPE_UNCACHEABLE)
+				final_memory_type = MEMORY_TYPE_UNCACHEABLE;
+			else if ((type == MEMORY_TYPE_WRITE_THROUGH && final_memory_type == MEMORY_TYPE_WRITE_BACK) || (type == MEMORY_TYPE_WRITE_BACK && final_memory_type == MEMORY_TYPE_WRITE_THROUGH))
+				final_memory_type = MEMORY_TYPE_WRITE_THROUGH;
+			else
+				final_memory_type = MEMORY_TYPE_UNCACHEABLE;
+		}
+
+		// If no MTRR matched, return the default memory type
+		return (final_memory_type != MEMORY_TYPE_INVALID) ? final_memory_type : static_cast<uint8_t>(state.def_type.default_memory_type);
+	}
+
+	uint8_t get_mtrr_range_memory_type(const mtrr_state& state, uint64_t physical_address, size_t target_size, bool& is_uniform)
+	{
+		// TODO: This function could probably be written a lot better
+
+		is_uniform = true;
+
+		const uint8_t first_type = get_mtrr_memory_type_single(state, physical_address);
+		uint8_t result_type = first_type;
+
+		// Walk each 4 KB page in the range, starting from the second page
+		const uint64_t end_address = physical_address + target_size;
+		for (uint64_t addr = (physical_address & ~0xFFFULL) + 0x1000; addr < end_address; addr += 0x1000)
+		{
+			const uint8_t type = get_mtrr_memory_type_single(state, addr);
+			if (type == result_type)
+				continue;
+
+			is_uniform = false;
+
+			// Overlap precedence rules (13.11.4.1):
+			//  - UC wins over everything.
+			//  - WT + WB = WT.
+			//  - All other overlaps are architecturally undefined; fall back to UC.
+			if (type == MEMORY_TYPE_UNCACHEABLE || result_type == MEMORY_TYPE_UNCACHEABLE)
+				result_type = MEMORY_TYPE_UNCACHEABLE;
+			else if ((type == MEMORY_TYPE_WRITE_THROUGH && result_type == MEMORY_TYPE_WRITE_BACK) || (type == MEMORY_TYPE_WRITE_BACK && result_type == MEMORY_TYPE_WRITE_THROUGH))
+				result_type = MEMORY_TYPE_WRITE_THROUGH;
+			else
+				result_type = MEMORY_TYPE_UNCACHEABLE;
+		}
+
+		return result_type;
+	}
+
 }  // namespace hv::memory

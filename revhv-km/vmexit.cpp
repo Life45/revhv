@@ -126,10 +126,25 @@ namespace hv::vmexit
 		}
 
 		// Store the result in the guest context
-		vcpu->guest_context->eax = msr_result >> 32;
-		vcpu->guest_context->edx = msr_result & 0xFFFFFFFF;
+		vcpu->guest_context->edx = msr_result >> 32;
+		vcpu->guest_context->eax = msr_result & 0xFFFFFFFF;
 
 		advance_guest_rip();
+	}
+
+	static bool is_mtrr_msr(uint32_t msr)
+	{
+		if (msr == IA32_MTRR_DEF_TYPE)
+			return true;
+		if (msr == IA32_MTRR_FIX64K_00000)
+			return true;
+		if (msr >= IA32_MTRR_FIX16K_80000 && msr <= IA32_MTRR_FIX16K_A0000)
+			return true;
+		if (msr >= IA32_MTRR_FIX4K_C0000 && msr <= IA32_MTRR_FIX4K_F8000)
+			return true;
+		if (msr >= IA32_MTRR_PHYSBASE0 && msr <= (IA32_MTRR_PHYSBASE0 + 19))
+			return true;
+		return false;
 	}
 
 	static void handle_wrmsr(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
@@ -140,6 +155,12 @@ namespace hv::vmexit
 		// privilege level, and general-protection exceptions that are based on checking I/O permission bits in the taskstate segment (TSS).
 
 		uint32_t msr = guest_context->ecx;
+
+		if (is_mtrr_msr(msr))
+		{
+			// TODO: Actually update EPT memory types
+			LOG_INFO("Guest is writing to MTRR MSR: 0x%X. This will cause all EPT entries to be re-evaluated for memory type and permissions, which might cause performance degradation.", msr);
+		}
 
 		// Check if it's one of the MSRs that we use differently on host
 		// Since we don't exit for MSRs in the range 00000000H – 00001FFFH nor in the range C0000000H – C0001FFFH, we can skip those MSRs
@@ -210,6 +231,7 @@ namespace hv::vmexit
 
 	static void handle_nmi(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
+		LOG_INFO("Guest NMI received on core %i", vcpu->core_id);
 		// If a host crash is in progress, devirtualize and give control back to the host OS
 		error::give_control_on_unrecoverable_error(vcpu);
 
@@ -229,6 +251,8 @@ namespace hv::vmexit
 
 		// inject the NMI into the guest
 		vmx::inject_nmi();
+
+		LOG_INFO("Injected NMI into guest on core %i, remaining queued NMIs: %lu", vcpu->core_id, vcpu->queued_nmi_count);
 
 		if (vcpu->queued_nmi_count == 0)
 		{

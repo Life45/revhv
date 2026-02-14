@@ -58,6 +58,7 @@ namespace hv::vmcs
 		desiredProcBasedCtls2.conceal_vmx_from_pt = 1;
 		desiredProcBasedCtls2.enable_xsaves = 1;
 		desiredProcBasedCtls2.enable_user_wait_pause = 1;
+		desiredProcBasedCtls2.enable_ept = 1;
 
 		if (!write_control_field(desiredProcBasedCtls2.flags, VMCS_CTRL_SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, IA32_VMX_PROCBASED_CTLS2, IA32_VMX_PROCBASED_CTLS2))
 		{
@@ -246,7 +247,25 @@ namespace hv::vmcs
 		// 26.6.9 MSR-Bitmap Address
 		//
 
-		// Do not exit for any MSRs
+		// Exit for MTRR MSRs
+		set_wrmsr_exiting(vcpu, IA32_MTRR_DEF_TYPE, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX64K_00000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX16K_80000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX16K_A0000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_C0000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_C8000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_D0000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_D8000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_E0000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_E8000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_F0000, true);
+		set_wrmsr_exiting(vcpu, IA32_MTRR_FIX4K_F8000, true);
+		for (uint32_t i = 0; i < IA32_MTRR_VARIABLE_COUNT; i++)
+		{
+			set_wrmsr_exiting(vcpu, IA32_MTRR_PHYSBASE0 + i * 2, true);
+			set_wrmsr_exiting(vcpu, IA32_MTRR_PHYSMASK0 + i * 2, true);
+		}
+
 		if (!vmx::vmx_vmwrite(VMCS_CTRL_MSR_BITMAP_ADDRESS, static_cast<uint64_t>(MmGetPhysicalAddress(&vcpu->msr_bitmap).QuadPart)))
 		{
 			LOG_ERROR("Failed to write MSR bitmap address to VMCS");
@@ -293,6 +312,21 @@ namespace hv::vmcs
 		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMENTRY_INSTRUCTION_LENGTH, 0))
 		{
 			LOG_ERROR("Failed to write VM-entry instruction length to VMCS");
+			return false;
+		}
+
+		//
+		// 26.6.11 Extended-Page-Table Pointer (EPTP)
+		//
+		ept::initialize_ept(vcpu->ept_pages, vcpu->mtrr_state);
+
+		vcpu->eptp.flags = 0;
+		vcpu->eptp.page_walk_length = 4 - 1;			  // 4 levels of paging
+		vcpu->eptp.memory_type = MEMORY_TYPE_WRITE_BACK;  // Write-back memory
+		vcpu->eptp.page_frame_number = MmGetPhysicalAddress(&vcpu->ept_pages.pml4e).QuadPart >> 12;
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_EPT_POINTER, vcpu->eptp.flags))
+		{
+			LOG_ERROR("Failed to write EPTP to VMCS");
 			return false;
 		}
 
@@ -910,5 +944,26 @@ namespace hv::vmcs
 		}
 
 		return true;
+	}
+
+	void set_wrmsr_exiting(vcpu::vcpu* vcpu, uint32_t msr, bool exit)
+	{
+		auto const bit = 1 << (msr & 0b0111);
+
+		if (msr <= MSR_ID_LOW_MAX)
+		{
+			if (exit)
+				vcpu->msr_bitmap.wrmsr_low[msr / 8] |= bit;
+			else
+				vcpu->msr_bitmap.wrmsr_low[msr / 8] &= ~bit;
+		}
+
+		else if (msr >= MSR_ID_HIGH_MIN && msr <= MSR_ID_HIGH_MAX)
+		{
+			if (exit)
+				vcpu->msr_bitmap.wrmsr_high[(msr - MSR_ID_HIGH_MIN) / 8] |= bit;
+			else
+				vcpu->msr_bitmap.wrmsr_high[(msr - MSR_ID_HIGH_MIN) / 8] &= ~bit;
+		}
 	}
 }  // namespace hv::vmcs

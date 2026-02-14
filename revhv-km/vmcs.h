@@ -26,4 +26,8 @@ namespace hv::vmcs
 	/// @brief Writes the control fields to the VMCS region
 	/// @param vcpu Current vcpu
 	bool write_control_fields(vcpu::vcpu* vcpu);
+
+	/// @brief Sets or clears the writing VM-exit control for a specific MSR
+	/// @param msr MSR to set the control for
+	void set_wrmsr_exiting(vcpu::vcpu* vcpu, uint32_t msr, bool exit);
 }  // namespace hv::vmcs

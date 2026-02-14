@@ -7,8 +7,8 @@
 
 namespace logging
 {
-	// Lock for serial port access
-	sync::spin_lock serial_lock;
+	// Lock for serial port access (reentrant so nested/recursive logging from the same core cannot deadlock)
+	sync::reentrant_spin_lock serial_lock;
 
 	static int format_to(char* buffer, size_t bufferSize, const char* fmt, ...)
 	{
@@ -81,7 +81,6 @@ namespace logging
 
 	void log_fmt_print(log_level level, const char* fmt, ...)
 	{
-		// TODO: Synchronize access, multi-core prints gibberish otherwise
 		char buffer[512] = {0};
 
 		va_list args;
@@ -94,14 +93,7 @@ namespace logging
 		}
 		va_end(args);
 
-		// If a crash is in progress, avoid taking the lock to prevent deadlocks
-		if (sync::atomic_load(hv::g_hv.crash_in_progress) != 0)
-		{
-			serial::write_string(serial::SERIAL_COM_1, buffer);
-			return;
-		}
-
-		sync::scoped_spin_lock lock(serial_lock);
+		sync::scoped_reentrant_spin_lock lock(serial_lock);
 		serial::write_string(serial::SERIAL_COM_1, buffer);
 	}
 

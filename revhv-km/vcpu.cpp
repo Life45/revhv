@@ -50,6 +50,8 @@ namespace hv::vcpu
 
 		idt::initialize(vcpu->host_idt);
 
+		memory::read_mtrrs(vcpu->mtrr_state);
+
 		if (!vmcs::load_vmcs(vcpu))
 		{
 			LOG_ERROR("Failed to load VMCS region");

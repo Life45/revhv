@@ -1,0 +1,149 @@
+#include "ept.h"
+
+namespace hv::ept
+{
+	bool split_pde(ept_pages& ept_pages, ept_pde_2mb* pde_2mb, ept_pte** out_pt = nullptr)
+	{
+		if (pde_2mb->large_page == 0)
+		{
+			// Already split
+			return false;
+		}
+
+		if (ept_pages.split_pte_used >= ept_split_pte_count)
+		{
+			// No more split PTs available
+			return false;
+		}
+
+		auto const pt_pfn = ept_pages.split_pte_pfns[ept_pages.split_pte_used];
+		auto const pt = reinterpret_cast<ept_pte*>(&ept_pages.split_pte[ept_pages.split_pte_used]);
+		++ept_pages.split_pte_used;
+
+		for (size_t i = 0; i < 512; i++)
+		{
+			ept_pte& pte = pt[i];
+			pte.flags = 0;
+
+			// Inherit from PDE
+			pte.read_access = pde_2mb->read_access;
+			pte.write_access = pde_2mb->write_access;
+			pte.execute_access = pde_2mb->execute_access;
+			pte.memory_type = pde_2mb->memory_type;
+			pte.ignore_pat = pde_2mb->ignore_pat;
+			pte.accessed = pde_2mb->accessed;
+			pte.dirty = pde_2mb->dirty;
+			pte.user_mode_execute = pde_2mb->user_mode_execute;
+			pte.verify_guest_paging = pde_2mb->verify_guest_paging;
+			pte.paging_write_access = pde_2mb->paging_write_access;
+			pte.supervisor_shadow_stack = pde_2mb->supervisor_shadow_stack;
+			pte.suppress_ve = pde_2mb->suppress_ve;
+			pte.page_frame_number = (pde_2mb->page_frame_number << 9) + i;
+		}
+
+		// Update PDE to point to the new PT
+		ept_pde* pde = reinterpret_cast<ept_pde*>(pde_2mb);
+		pde->flags = 0;
+		pde->read_access = 1;
+		pde->write_access = 1;
+		pde->execute_access = 1;
+		pde->user_mode_execute = 1;
+		pde->page_frame_number = pt_pfn;
+
+		if (out_pt)
+		{
+			*out_pt = pt;
+		}
+		return true;
+	}
+
+	void initialize_ept(ept_pages& ept_pages, const memory::mtrr_state& mtrr_state)
+	{
+		memset(&ept_pages, 0, sizeof(ept_pages));
+
+		// Initialize split PT PFNs
+		for (size_t i = 0; i < ept_split_pte_count; i++)
+		{
+			auto pt = ept_pages.split_pte[i];
+			ept_pages.split_pte_pfns[i] = MmGetPhysicalAddress(reinterpret_cast<void*>(pt)).QuadPart >> 12;
+		}
+
+		// Initialize PML4E (only one entry used, it covers 512 GB)
+		ept_pml4e& pml4e = ept_pages.pml4e[0];
+		pml4e.read_access = 1;
+		pml4e.write_access = 1;
+		pml4e.execute_access = 1;
+		pml4e.page_frame_number = MmGetPhysicalAddress(&ept_pages.pdpte).QuadPart >> 12;
+
+		// Initialize PDPTEs
+		for (size_t i = 0; i < ept_pd_count; i++)
+		{
+			ept_pdpte& pdpte = ept_pages.pdpte[i];
+			pdpte.read_access = 1;
+			pdpte.write_access = 1;
+			pdpte.execute_access = 1;
+			pdpte.page_frame_number = MmGetPhysicalAddress(&ept_pages.pde_2mb[i]).QuadPart >> 12;
+
+			// Initialize PDEs (2 MB pages, split for non-uniform MTRR memory types)
+			for (size_t j = 0; j < 512; j++)
+			{
+				ept_pde_2mb& pde_2mb = ept_pages.pde_2mb[i][j];
+				pde_2mb.read_access = 1;
+				pde_2mb.write_access = 1;
+				pde_2mb.execute_access = 1;
+				pde_2mb.large_page = 1;
+				pde_2mb.page_frame_number = (i << 9) + j;
+
+				//
+				// 30.3.7.2 Memory Type Used for Translated Guest-Physical Addresses
+				//
+				// Memory type here effectively replaces MTRRs for EPT mappings since we implicitly set pde.disable_pat=0, therefore
+				// a combination of PAT and memory type that we set here will determine the actual memory type used.
+				//
+
+				// Get the memory type for the range and check if it's uniform
+				bool is_uniform = false;
+				const uint8_t memory_type = hv::memory::get_mtrr_range_memory_type(mtrr_state, pde_2mb.page_frame_number << 21, 0x200000, is_uniform);
+
+				if (is_uniform)
+				{
+					pde_2mb.memory_type = memory_type;
+					continue;
+				}
+
+				LOG_INFO("Non-uniform MTRR memory type detected for 2 MB page at PFN 0x%llx, splitting into 4 KB pages", pde_2mb.page_frame_number);
+
+				// Non-uniform memory type, need to split the 2 MB page into 4 KB pages
+				ept_pte* pt = nullptr;
+				const bool split_success = split_pde(ept_pages, &pde_2mb, &pt);
+				if (!split_success)
+				{
+					// Failed to split PDE, apply the most restrictive memory type (which get_mtrr_range_memory_type returned)
+					pde_2mb.memory_type = memory_type;
+					LOG_ERROR("Failed to split EPT PDE for non-uniform MTRR memory type, applying most restrictive memory type %u", memory_type);
+					continue;
+				}
+
+				// Initialize the PT entries with correct memory types
+				for (size_t k = 0; k < 512; k++)
+				{
+					ept_pte& pte = pt[k];
+
+					// Get the memory type for this 4 KB page
+					bool pte_is_uniform = false;
+					const uint8_t pte_memory_type = hv::memory::get_mtrr_range_memory_type(mtrr_state, pte.page_frame_number << 12, 0x1000, pte_is_uniform);
+
+					// It should always be uniform for a single 4 KB page
+					if (!pte_is_uniform)
+					{
+						LOG_ERROR("4KB pages should always have uniform MTRR memory type, something is wrong!");
+						// TODO: Better assertion handling
+						return;
+					}
+
+					pte.memory_type = pte_memory_type;
+				}
+			}
+		}
+	}
+}  // namespace hv::ept
