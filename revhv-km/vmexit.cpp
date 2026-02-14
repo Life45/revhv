@@ -116,7 +116,12 @@ namespace hv::vmexit
 		// Since we don't exit for MSRs in the range 00000000H – 00001FFFH nor in the range C0000000H – C0001FFFH, we can skip those MSRs
 		// unless a future implementation decides to exit for them, in that case a check is needed
 
-		uint64_t msr_result = exception_wrappers::rdmsr_wrapper(msr);
+		// This specific syntetic MSR costed me 2 days to debug. Thanks to HyperDbg, I discovered that in some NMI scenarios
+		// such as Windbg attempting to break in, or probably any host NMI hitting at this point results in VMWare or Hyper-V halting the VCPU.
+		// For that reason, we ignore this MSR and ABSOLUTELY DO NOT read it until my brain works again and thinks of a better fix.
+		constexpr auto HV_X64_MSR_GUEST_IDLE = 0x400000f0;
+
+		uint64_t msr_result = msr == HV_X64_MSR_GUEST_IDLE ? 0 : exception_wrappers::rdmsr_wrapper(msr);
 
 		// Check if an exception has occurred
 		if (vcpu->exception_info.exception_occurred)
