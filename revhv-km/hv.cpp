@@ -1,4 +1,5 @@
 #include "hv.h"
+#include "utils.hpp"
 
 namespace hv
 {
@@ -16,14 +17,14 @@ namespace hv
 			return false;
 		}
 
-		memset(g_hv.vcpus, 0, logicalProcessorCount * sizeof(vcpu::vcpu));
+		utils::memset(g_hv.vcpus, 0, logicalProcessorCount * sizeof(vcpu::vcpu));
 
 		return true;
 	}
 
 	bool start()
 	{
-		memset(&g_hv, 0, sizeof(g_hv));
+		utils::memset(&g_hv, 0, sizeof(g_hv));
 
 		g_hv.system_cr3.flags = __readcr3();
 

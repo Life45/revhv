@@ -59,7 +59,7 @@ namespace hv::ept
 
 	void initialize_ept(ept_pages& ept_pages, const memory::mtrr_state& mtrr_state)
 	{
-		memset(&ept_pages, 0, sizeof(ept_pages));
+		utils::memset(&ept_pages, 0, sizeof(ept_pages));
 
 		// Initialize split PT PFNs
 		for (size_t i = 0; i < ept_split_pte_count; i++)

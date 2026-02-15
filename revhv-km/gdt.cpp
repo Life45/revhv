@@ -1,10 +1,11 @@
 #include "gdt.h"
+#include "utils.hpp"
 
 namespace hv::gdt
 {
 	void initialize_tss(task_state_segment_64* tss, const uint8_t* ist1, const uint8_t* ist2, const uint8_t* ist3, size_t ist_size)
 	{
-		memset(tss, 0, sizeof(task_state_segment_64));
+		utils::memset(tss, 0, sizeof(task_state_segment_64));
 
 		tss->ist1 = reinterpret_cast<uint64_t>(ist1) + ist_size;
 		tss->ist2 = reinterpret_cast<uint64_t>(ist2) + ist_size;
@@ -18,7 +19,7 @@ namespace hv::gdt
 
 	void initialize(segment_descriptor_32* gdt, task_state_segment_64* tss)
 	{
-		memset(gdt, 0, host_descriptor_count * sizeof(segment_descriptor_32));
+		utils::memset(gdt, 0, host_descriptor_count * sizeof(segment_descriptor_32));
 
 		// 3.4.5.1 Code- and Data-Segment Descriptor Types
 

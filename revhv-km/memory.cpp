@@ -1,6 +1,7 @@
 #include "memory.h"
 #include "hv.h"
 #include "pe.h"
+#include "utils.hpp"
 
 extern "C" void* __ImageBase;
 
@@ -18,7 +19,7 @@ namespace hv::memory
 			return nullptr;
 		}
 
-		memset(va, 0, 0x1000);
+		utils::memset(va, 0, 0x1000);
 
 		return va;
 	}

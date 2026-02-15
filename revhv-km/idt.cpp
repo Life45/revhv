@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "gdt.h"
 #include "vcpu.h"
+#include "utils.hpp"
 
 namespace hv::idt
 {
@@ -25,7 +26,7 @@ namespace hv::idt
 
 	void initialize(segment_descriptor_interrupt_gate_64* idt)
 	{
-		memset(idt, 0, sizeof(segment_descriptor_interrupt_gate_64) * idt_gate_count);
+		utils::memset(idt, 0, sizeof(segment_descriptor_interrupt_gate_64) * idt_gate_count);
 
 		// 7.15 Exception and Interrupt Reference
 
