@@ -5,6 +5,7 @@
 #include "utils.hpp"
 #include "exception_wrappers.h"
 #include "error.h"
+#include "hypercall.h"
 
 namespace hv::vmexit
 {
@@ -323,11 +324,18 @@ namespace hv::vmexit
 		case VMX_EXIT_REASON_EXCEPTION_OR_NMI:	// We don't exit for other exceptions, only NMIs
 			handle_nmi(guest_context, vcpu);
 			break;
+		case VMX_EXIT_REASON_EXECUTE_VMCALL:
+			if (!hypercall::handle_hypercall(guest_context, vcpu))
+			{
+				handle_vmx_instruction(guest_context, vcpu);  // If hypercall key is invalid, treat it as an invalid VMX instruction
+				break;
+			}
+			advance_guest_rip();
+			break;
 		case VMX_EXIT_REASON_EXECUTE_INVEPT:
 		case VMX_EXIT_REASON_EXECUTE_INVVPID:
 		case VMX_EXIT_REASON_EXECUTE_SEAMCALL:
 		case VMX_EXIT_REASON_EXECUTE_TDCALL:
-		case VMX_EXIT_REASON_EXECUTE_VMCALL:
 		case VMX_EXIT_REASON_EXECUTE_VMCLEAR:
 		case VMX_EXIT_REASON_EXECUTE_VMLAUNCH:
 		case VMX_EXIT_REASON_EXECUTE_VMPTRLD:

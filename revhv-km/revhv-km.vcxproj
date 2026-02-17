@@ -124,6 +124,7 @@
     <ClCompile Include="format.cpp" />
     <ClCompile Include="gdt.cpp" />
     <ClCompile Include="hv.cpp" />
+    <ClCompile Include="hypercall.cpp" />
     <ClCompile Include="idt.cpp" />
     <ClCompile Include="logging.cpp" />
     <ClCompile Include="main.cpp" />
@@ -144,6 +145,7 @@
     <ClInclude Include="format.h" />
     <ClInclude Include="gdt.h" />
     <ClInclude Include="hv.h" />
+    <ClInclude Include="hypercall.h" />
     <ClInclude Include="idt.h" />
     <ClInclude Include="includes.h" />
     <ClInclude Include="isr.h" />
