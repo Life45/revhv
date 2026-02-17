@@ -161,12 +161,6 @@ namespace hv::vmexit
 
 		uint32_t msr = guest_context->ecx;
 
-		if (is_mtrr_msr(msr))
-		{
-			// TODO: Actually update EPT memory types
-			LOG_INFO("Guest is writing to MTRR MSR: 0x%X. This will cause all EPT entries to be re-evaluated for memory type and permissions, which might cause performance degradation.", msr);
-		}
-
 		// Check if it's one of the MSRs that we use differently on host
 		// Since we don't exit for MSRs in the range 00000000H – 00001FFFH nor in the range C0000000H – C0001FFFH, we can skip those MSRs
 		// unless a future implementation decides to exit for them, in that case a check is needed
@@ -180,6 +174,17 @@ namespace hv::vmexit
 		{
 			inject_host_hw_exception_to_guest(vcpu);
 			return;
+		}
+
+		if (is_mtrr_msr(msr))
+		{
+			LOG_INFO("Guest wrote to MTRR MSR: 0x%X. EPT memory types will be updated.", msr);
+			memory::read_mtrrs(vcpu->mtrr_state);
+			ept::update_ept_memory_types(vcpu->ept_pages, vcpu->mtrr_state);
+			vmx::invept(invept_all_context, 0);
+
+			// Making sure MTRRs are consistent across cores is the guest's responsibility.
+			// Therefore, we don't do any synchronization between cores here.
 		}
 
 		advance_guest_rip();

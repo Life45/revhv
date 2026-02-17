@@ -26,6 +26,8 @@ namespace hv::vmx
 	/// @brief Launches the VM using VMLAUNCH
 	/// @return True if VM was launched successfully, false otherwise
 	bool launch_vm();
+
+	extern "C" void __invept(invept_type type, const invept_descriptor* descriptor);
 }  // namespace hv::vmx
 
 // Inline wrappers
@@ -84,6 +86,18 @@ namespace hv::vmx
 			return 0;
 		}
 		return value;
+	}
+
+	/// @brief Executes INVEPT
+	/// @param type invept_single_context or invept_all_context
+	/// @param eptp EPTP to invalidate (only used for invept_single_context)
+	inline void invept(invept_type type, uint64_t eptp)
+	{
+		invept_descriptor descriptor = {0};
+		descriptor.ept_pointer = eptp;
+		descriptor.reserved = 0;
+
+		__invept(type, &descriptor);
 	}
 
 	/// @brief Clears the VM-entry interruption information field

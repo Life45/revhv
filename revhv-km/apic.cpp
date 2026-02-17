@@ -13,6 +13,7 @@ namespace apic
 	static inline uint32_t lapic_mmio_read32(volatile uint8_t* lapic_mmio, uint32_t off)
 	{
 		volatile uint32_t* reg = (volatile uint32_t*)(lapic_mmio + off);
+		_ReadWriteBarrier();
 		uint32_t v = *reg;
 		_ReadWriteBarrier();
 		return v;

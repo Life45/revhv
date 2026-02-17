@@ -163,6 +163,7 @@
     <MASM Include="utils.asm" />
     <MASM Include="vmexit_stub.asm" />
     <MASM Include="vmlaunch_stub.asm" />
+    <MASM Include="vmx_intrin.asm" />
   </ItemGroup>
   <ItemGroup>
     <None Include="utils.inl" />

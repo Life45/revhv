@@ -23,9 +23,21 @@ namespace hv::ept
 		size_t split_pte_used = 0;
 	};
 
+	/// @brief Splits a 2 MB page into 4 KB pages
+	/// @param ept_pages The EPT pages to use for splitting
+	/// @param pde_2mb The 2 MB page to split
+	/// @param out_pt The output pointer to the new PT
+	/// @return True if the split was successful, false otherwise. Returns false for already split PDEs too.
+	bool split_pde(ept_pages& ept_pages, ept_pde_2mb* pde_2mb, ept_pte** out_pt);
+
 	/// @brief Initializes the EPT structures
 	/// @param ept_pages The EPT pages to initialize
 	/// @param mtrr_state The MTRR state to use for memory type information
 	void initialize_ept(ept_pages& ept_pages, const memory::mtrr_state& mtrr_state);
+
+	/// @brief Updates the memory types of EPT entries based on the current MTRR state. Should be called after initialization and after any changes to MTRRs.
+	/// @param ept_pages The EPT pages to update
+	/// @param mtrr_state The MTRR state to use for memory type information
+	void update_ept_memory_types(ept_pages& ept_pages, const memory::mtrr_state& mtrr_state);
 
 }  // namespace hv::ept

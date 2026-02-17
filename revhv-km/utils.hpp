@@ -81,6 +81,9 @@ namespace utils
 			void write_gs(uint16_t selector);
 			void write_tr(uint16_t selector);
 			void write_ldtr(uint16_t selector);
+
+			// Used for testing #DF and ISTs, not meant to be used in the actual hypervisor code
+			void test_trash_rsp();
 		}
 	}  // namespace segment
 }  // namespace utils

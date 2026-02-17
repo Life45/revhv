@@ -101,4 +101,9 @@ write_ldtr proc
     ret
 write_ldtr endp
 
+test_trash_rsp proc
+    mov rsp, 0
+    ret
+test_trash_rsp endp
+
 end
