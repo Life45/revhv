@@ -1,6 +1,7 @@
 #pragma once
 #include "includes.h"
 #include "../common/hypercall_types.hpp"
+#include "../common/logging_types.hpp"
 
 namespace hv::hypercall
 {
@@ -16,4 +17,9 @@ namespace hv::hypercall
 	/// @brief Pings the hv from the current core
 	/// @return True if the hv responded correctly, false otherwise
 	bool ping_hv();
+
+	/// @brief Flushes the standard log messages into the provided buffer.
+	/// @param messages Vector to flush the messages into
+	/// @return The number of messages flushed into the vector
+	bool flush_std_logs(std::vector<logging::standard_log_message>& messages);
 }  // namespace hv::hypercall

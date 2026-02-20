@@ -233,4 +233,8 @@ namespace hv::vcpu
 	/// @brief Devirtualize current vCPU and restore (most) context to host OS
 	/// @param vcpu Pointer to the vCPU structure
 	void devirtualize(vcpu* vcpu);
+
+	/// @brief Clears the exception info of the vCPU
+	/// @param vcpu Pointer to the vCPU structure
+	void clear_exception_info(vcpu* vcpu);
 }  // namespace hv::vcpu

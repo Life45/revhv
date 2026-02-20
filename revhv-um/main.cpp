@@ -28,7 +28,25 @@ int main()
 		return -1;
 	}
 
-	system("pause");
+	while (true)
+	{
+		std::vector<logging::standard_log_message> messages(100);
+		if (hv::hypercall::flush_std_logs(messages))
+		{
+			logger::info("Flushed {} standard log messages from the hypervisor:", messages.size());
+			for (const auto& msg : messages)
+			{
+				logger::info("Log #{}: {}", msg.message_number, msg.text);
+			}
+		}
+		else
+		{
+			logger::error("Failed to flush standard logs from the hypervisor.");
+			return -1;
+		}
+
+		Sleep(5000);
+	}
 
 	return 0;
 }

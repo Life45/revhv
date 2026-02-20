@@ -3,9 +3,13 @@
 #include "memory.h"
 #include "vcpu.h"
 #include "sync.hpp"
+#include "logging.h"
 
 namespace hv
 {
+	/// @brief When enabled, LOG_xxx macros will also output to the serial port.
+	constexpr bool serial_output_enabled = true;
+
 	struct hypervisor
 	{
 		memory::host_page_tables host_page_tables;
@@ -18,6 +22,9 @@ namespace hv
 		// Dynamic array of vCPUs
 		size_t vcpu_count;
 		vcpu::vcpu* vcpus;
+
+		// Standard logger shared across all cores
+		logging::standard_logger logger;
 	};
 
 	extern hypervisor g_hv;

@@ -113,4 +113,12 @@ namespace hv::vcpu
 		__writemsr(IA32_KERNEL_GS_BASE, vcpu->restore_context.kernel_gs_base);
 	}
 
+	void clear_exception_info(vcpu* vcpu)
+	{
+		vcpu->exception_info.exception_occurred = false;
+		vcpu->exception_info.exception_vector = 0;
+		vcpu->exception_info.error_code = 0;
+		vcpu->exception_info.additional_info1 = 0;
+	}
+
 }  // namespace hv::vcpu

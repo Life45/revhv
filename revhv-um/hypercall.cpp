@@ -14,4 +14,23 @@ namespace hv::hypercall
 			return false;
 		}
 	}
+
+	bool flush_std_logs(std::vector<logging::standard_log_message>& messages)
+	{
+		const size_t max_messages = messages.size();
+		auto buffer = messages.data();
+		size_t flushed = 0;
+
+		__try
+		{
+			flushed = __vmcall(hypercall_number::flush_standard_logs, reinterpret_cast<uint64_t>(buffer), max_messages);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+
+		messages.resize(flushed);
+		return true;
+	}
 }  // namespace hv::hypercall

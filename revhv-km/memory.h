@@ -89,4 +89,18 @@ namespace hv::memory
 	/// @param is_uniform Reference to a bool that will be set to true if the memory type is uniform across the entire range, false otherwise
 	/// @return The memory type for the given physical address and size. If not uniform, the memory type of most restrictive MTRR will be returned.
 	uint8_t get_mtrr_range_memory_type(const mtrr_state& state, uint64_t physical_address, size_t target_size, bool& is_uniform);
+
+	/// @brief Translates a guest virtual address to a guest physical address using the provided CR3
+	/// @param guest_cr3 CR3 of the guest to use for translation
+	/// @param gva Guest virtual address to translate
+	/// @param offset_to_next_page Offset to next page (basically amount of safe bytes to read, then a second translation will be needed)
+	/// @return The guest physical address corresponding to the given guest virtual address, or 0 if the translation failed
+	uint64_t gva_to_gpa(const cr3& guest_cr3, uint64_t gva, size_t* offset_to_next_page = nullptr);
+
+	/// @brief Translates a guest virtual address to a host-mapped virtual address using the provided CR3
+	/// @param guest_cr3 CR3 of the guest to use for translation
+	/// @param gva Guest virtual address to translate
+	/// @param offset_to_next_page Offset to next page (basically amount of safe bytes to read, then a second translation will be needed)
+	/// @return The host-mapped virtual address corresponding to the given guest virtual address, or nullptr if the translation failed
+	uint64_t gva_to_hva(const cr3& guest_cr3, uint64_t gva, size_t* offset_to_next_page = nullptr);
 }  // namespace hv::memory

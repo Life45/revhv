@@ -46,8 +46,8 @@ namespace hv::exception
 		vcpu->exception_info.exception_vector = trap_frame->vector;
 		vcpu->exception_info.error_code = trap_frame->machine_frame.error_code;
 
-		// Execution is resumed at RDI
-		trap_frame->machine_frame.rip = trap_frame->rdi;
+		// Execution is resumed at R15
+		trap_frame->machine_frame.rip = trap_frame->r15;
 	}
 
 	static void handle_ud(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)
@@ -64,8 +64,8 @@ namespace hv::exception
 		vcpu->exception_info.exception_vector = trap_frame->vector;
 		vcpu->exception_info.error_code = trap_frame->machine_frame.error_code;
 
-		// Execution is resumed at RDI
-		trap_frame->machine_frame.rip = trap_frame->rdi;
+		// Execution is resumed at R15
+		trap_frame->machine_frame.rip = trap_frame->r15;
 	}
 
 	static void handle_df(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)
@@ -103,8 +103,8 @@ namespace hv::exception
 
 	void handle_exception(trap_frame* trap_frame, vcpu::vcpu* vcpu)
 	{
-		// It's an expected exception if RSI is set to the RIP of the instruction that caused the exception
-		bool expected_exception = trap_frame->rsi == trap_frame->machine_frame.rip;
+		// It's an expected exception if R14 is set to the RIP of the instruction that caused the exception
+		bool expected_exception = trap_frame->r14 == trap_frame->machine_frame.rip;
 
 		switch (trap_frame->vector)
 		{

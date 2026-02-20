@@ -11,6 +11,7 @@ namespace hv::hypercall
 	enum hypercall_number : uint64_t
 	{
 		ping = 1,
+		flush_standard_logs,
 		hypercall_max
 	};
 }  // namespace hv::hypercall

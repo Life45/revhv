@@ -115,6 +115,15 @@ namespace hv::vmx
 		return ss.descriptor_privilege_level;
 	}
 
+	/// @brief Gets the CR3 of the guest
+	/// @return CR3 of the guest
+	inline cr3 get_guest_cr3()
+	{
+		cr3 guest_cr3 = {0};
+		guest_cr3.flags = vmx_vmread(VMCS_GUEST_CR3);
+		return guest_cr3;
+	}
+
 	/// @brief Injects a hardware exception with an error code
 	/// @param vector Vector of the exception
 	/// @param error_code Error code of the exception
@@ -149,5 +158,12 @@ namespace hv::vmx
 		interrupt_info.interruption_type = non_maskable_interrupt;
 		interrupt_info.valid = 1;
 		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
+	}
+
+	/// @brief Returns a pointer to the current vCPU structure in vmx-root
+	/// @return Pointer to the current vCPU structure
+	inline vcpu::vcpu* current_vcpu()
+	{
+		return reinterpret_cast<vcpu::vcpu*>(_readfsbase_u64());
 	}
 }  // namespace hv::vmx

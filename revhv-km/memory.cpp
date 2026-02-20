@@ -546,4 +546,86 @@ namespace hv::memory
 		return result_type;
 	}
 
+	uint64_t gva_to_gpa(const cr3& guest_cr3, uint64_t gva, size_t* offset_to_next_page)
+	{
+		pml4_virtual_address va = {0};
+		va.virtual_address = reinterpret_cast<void*>(gva);
+
+		// PML4
+		const pml4e_64* dtb = reinterpret_cast<pml4e_64*>(host_physical_base + (guest_cr3.address_of_page_directory << 12));
+		const auto pml4e = dtb[va.pml4_idx];
+		if (!pml4e.present)
+		{
+			return 0;
+		}
+
+		// PDPT
+		const pdpte_64* pdpt = reinterpret_cast<pdpte_64*>(host_physical_base + (pml4e.page_frame_number << 12));
+		const auto pdpte = pdpt[va.pdpt_idx];
+		if (!pdpte.present)
+		{
+			return 0;
+		}
+
+		// 1 GB large page
+		if (pdpte.large_page)
+		{
+			pdpte_1gb_64 pdpte_1gb;
+			pdpte_1gb.flags = pdpte.flags;
+
+			const auto offset = (va.pd_idx << 21) + (va.pt_idx << 12) + va.offset;
+
+			if (offset_to_next_page)
+				*offset_to_next_page = 0x40000000 - offset;
+
+			return (pdpte_1gb.page_frame_number << 30) + offset;
+		}
+
+		// PD
+		const pde_64* pd = reinterpret_cast<pde_64*>(host_physical_base + (pdpte.page_frame_number << 12));
+		const auto pde = pd[va.pd_idx];
+		if (!pde.present)
+		{
+			return 0;
+		}
+
+		// 2 MB large page
+		if (pde.large_page)
+		{
+			pde_2mb_64 pde_2mb;
+			pde_2mb.flags = pde.flags;
+
+			auto const offset = (va.pt_idx << 12) + va.offset;
+
+			if (offset_to_next_page)
+				*offset_to_next_page = 0x200000 - offset;
+
+			return (pde_2mb.page_frame_number << 21) + offset;
+		}
+
+		// PT
+		const pte_64* pt = reinterpret_cast<pte_64*>(host_physical_base + (pde.page_frame_number << 12));
+		const auto pte = pt[va.pt_idx];
+		if (!pte.present)
+		{
+			return 0;
+		}
+
+		if (offset_to_next_page)
+			*offset_to_next_page = 0x1000 - va.offset;
+
+		return (pte.page_frame_number << 12) + va.offset;
+	}
+
+	uint64_t gva_to_hva(const cr3& guest_cr3, uint64_t gva, size_t* offset_to_next_page)
+	{
+		const auto gpa = gva_to_gpa(guest_cr3, gva, offset_to_next_page);
+		if (gpa == 0)
+		{
+			return 0;
+		}
+
+		return host_physical_base + gpa;
+	}
+
 }  // namespace hv::memory

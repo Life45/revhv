@@ -34,7 +34,7 @@ namespace sync
 	class spin_lock
 	{
 	private:
-		volatile long m_flag = 0;  // 0 = unlocked, 1 = locked
+		volatile long m_flag;  // 0 = unlocked, 1 = locked
 	public:
 		spin_lock() = default;
 		spin_lock(const spin_lock&) = delete;
@@ -71,8 +71,8 @@ namespace sync
 	class reentrant_spin_lock
 	{
 	private:
-		volatile long m_owner = 0;	// 0 = unlocked, otherwise owner token
-		volatile long m_depth = 0;	// recursion depth
+		volatile long m_owner;	// 0 = unlocked, otherwise owner token
+		volatile long m_depth;	// recursion depth
 
 		static constexpr long UNLOCKED = 0;
 

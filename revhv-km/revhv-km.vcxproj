@@ -126,6 +126,7 @@
     <ClCompile Include="hv.cpp" />
     <ClCompile Include="hypercall.cpp" />
     <ClCompile Include="idt.cpp" />
+    <ClCompile Include="introspection.cpp" />
     <ClCompile Include="logging.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="memory.cpp" />
@@ -148,6 +149,7 @@
     <ClInclude Include="hypercall.h" />
     <ClInclude Include="idt.h" />
     <ClInclude Include="includes.h" />
+    <ClInclude Include="introspection.h" />
     <ClInclude Include="isr.h" />
     <ClInclude Include="logging.h" />
     <ClInclude Include="memory.h" />
