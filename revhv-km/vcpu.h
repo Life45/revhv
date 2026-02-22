@@ -4,6 +4,7 @@
 #include "idt.h"
 #include "exception.h"
 #include "ept.h"
+#include "../common/hypercall_types.hpp"
 
 namespace hv::vcpu
 {
@@ -211,6 +212,8 @@ namespace hv::vcpu
 		alignas(0x1000) vmx_msr_bitmap msr_bitmap;
 
 		alignas(0x1000) ept::ept_pages ept_pages;
+
+		uint8_t hypercall_local_buffer[hypercall::MAX_VMEM_CHUNK_SIZE];
 
 		ept_pointer eptp;
 

@@ -22,4 +22,20 @@ namespace hv::hypercall
 	/// @param messages Vector to flush the messages into
 	/// @return The number of messages flushed into the vector
 	bool flush_std_logs(std::vector<logging::standard_log_message>& messages);
+
+	/// @brief Reads memory from target virtual address space into a local buffer.
+	/// @param target_va Target virtual address in the selected address space
+	/// @param out_buffer Destination buffer in current process
+	/// @param size Number of bytes to read
+	/// @param target_cr3 Target address space CR3 (0 = system CR3)
+	/// @return Number of bytes read
+	size_t read_vmemory(uint64_t target_va, void* out_buffer, size_t size, uint64_t target_cr3 = 0);
+
+	/// @brief Writes memory from a local buffer into target virtual address space.
+	/// @param target_va Target virtual address in the selected address space
+	/// @param in_buffer Source buffer in current process
+	/// @param size Number of bytes to write
+	/// @param target_cr3 Target address space CR3 (0 = system CR3)
+	/// @return Number of bytes written
+	size_t write_vmemory(uint64_t target_va, const void* in_buffer, size_t size, uint64_t target_cr3 = 0);
 }  // namespace hv::hypercall

@@ -2,6 +2,43 @@
 #include "hypercall.h"
 #include "logger.hpp"
 #include "utils.hpp"
+#include "kmodules.h"
+#include <iostream>
+
+void flush_thread()
+{
+	std::ofstream log_file("hv_logs.txt", std::ios::out);
+	if (!log_file.is_open())
+	{
+		logger::error("Failed to open hv_logs.txt for writing hypervisor logs.");
+		return;
+	}
+
+	while (true)
+	{
+		std::vector<logging::standard_log_message> messages(100);
+		if (hv::hypercall::flush_std_logs(messages))
+		{
+			for (const auto& msg : messages)
+			{
+				log_file << std::format("#{}: {}", msg.message_number, msg.text);
+			}
+
+			log_file.flush();
+		}
+		else
+		{
+			logger::error("Failed to flush standard logs from the hypervisor.");
+			return;
+		}
+
+		// If the buffer was utilized fully, flush again immediately to avoid missing messages
+		if (messages.size() < 100)
+		{
+			std::this_thread::sleep_for(5s);
+		}
+	}
+}
 
 int main()
 {
@@ -24,29 +61,23 @@ int main()
 
 	if (fail)
 	{
-		logger::error("Some CPU cores failed to communicate with the hypervisor.");
+		logger::error("Some cores failed to communicate with the hypervisor.");
 		return -1;
 	}
 
-	while (true)
+	std::cout << "Spawn a PowerShell terminal to monitor hv_logs.txt? [y/N]: ";
+	std::string answer;
+	std::getline(std::cin, answer);
+	if (!answer.empty() && (answer[0] == 'y' || answer[0] == 'Y'))
 	{
-		std::vector<logging::standard_log_message> messages(100);
-		if (hv::hypercall::flush_std_logs(messages))
-		{
-			logger::info("Flushed {} standard log messages from the hypervisor:", messages.size());
-			for (const auto& msg : messages)
-			{
-				logger::info("Log #{}: {}", msg.message_number, msg.text);
-			}
-		}
-		else
-		{
-			logger::error("Failed to flush standard logs from the hypervisor.");
-			return -1;
-		}
-
-		Sleep(5000);
+		std::string log_path = std::filesystem::absolute("hv_logs.txt").string();
+		std::string cmd = "start powershell.exe -NoExit -Command \"Get-Content -Path '" + log_path + "' -Wait\"";
+		system(cmd.c_str());
 	}
+
+	// Start the log flushing thread
+	std::thread log_flush_thread(flush_thread);
+	log_flush_thread.detach();
 
 	return 0;
 }

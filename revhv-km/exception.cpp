@@ -11,8 +11,10 @@ namespace hv::exception
 {
 	static void log_trap_frame(const trap_frame* trap_frame)
 	{
-		LOG_ERROR("Trap frame: \nRAX: %llx \nRCX: %llx \nRDX: %llx \nRBX: %llx \nRBP: %llx \nRSI: %llx \nRDI: %llx \nR8: %llx \nR9: %llx \nR10: %llx \nR11: %llx \nR12: %llx \nR13: %llx \nR14: %llx \nR15: %llx \nVector: %llx \nMachine frame: \nError code: %llx \nSS: %llx \nRSP: %llx \nRFLAGS: %llx \nCS: %llx \nRIP: %llx", trap_frame->rax, trap_frame->rcx, trap_frame->rdx, trap_frame->rbx, trap_frame->rbp, trap_frame->rsi, trap_frame->rdi, trap_frame->r8, trap_frame->r9, trap_frame->r10,
-				  trap_frame->r11, trap_frame->r12, trap_frame->r13, trap_frame->r14, trap_frame->r15, trap_frame->vector, trap_frame->machine_frame.error_code, trap_frame->machine_frame.ss, trap_frame->machine_frame.rsp, trap_frame->machine_frame.rflags, trap_frame->machine_frame.cs, trap_frame->machine_frame.rip);
+		LOG_ERROR("Trap frame: \nRAX: %llx \nRCX: %llx \nRDX: %llx \nRBX: %llx \nRBP: %llx \nRSI: %llx \nRDI: %llx \nR8: %llx \nR9: %llx \nR10: %llx \nR11: %llx \nR12: %llx \nR13: %llx \nR14: %llx \nR15: %llx \nVector: %llx", trap_frame->rax, trap_frame->rcx, trap_frame->rdx, trap_frame->rbx, trap_frame->rbp, trap_frame->rsi, trap_frame->rdi, trap_frame->r8, trap_frame->r9, trap_frame->r10, trap_frame->r11, trap_frame->r12, trap_frame->r13, trap_frame->r14, trap_frame->r15, trap_frame->vector);
+		LOG_ERROR("Machine frame: \nError code: %llx \nSS: %llx \nRSP: %llx \nRFLAGS: %llx \nCS: %llx \nRIP: %llx", trap_frame->machine_frame.error_code, trap_frame->machine_frame.ss, trap_frame->machine_frame.rsp, trap_frame->machine_frame.rflags, trap_frame->machine_frame.cs, trap_frame->machine_frame.rip);
+		auto rip_rva = trap_frame->machine_frame.rip - reinterpret_cast<uint64_t>(&__ImageBase);
+		LOG_ERROR("RIP RVA: %llx", rip_rva);
 	}
 
 	static void handle_generic(trap_frame* trap_frame, vcpu::vcpu* vcpu, bool expected_exception)

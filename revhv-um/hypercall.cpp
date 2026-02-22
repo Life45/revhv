@@ -1,4 +1,5 @@
 #include "hypercall.h"
+#include <algorithm>
 
 namespace hv::hypercall
 {
@@ -6,7 +7,7 @@ namespace hv::hypercall
 	{
 		__try
 		{
-			return __vmcall(hypercall_number::ping, 0, 0, 0) == 1;
+			return __vmcall(hypercall_number::ping) == 1;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -32,5 +33,95 @@ namespace hv::hypercall
 
 		messages.resize(flushed);
 		return true;
+	}
+
+	size_t read_vmemory(uint64_t target_va, void* out_buffer, size_t size, uint64_t target_cr3)
+	{
+		if (!out_buffer || size == 0)
+		{
+			return 0;
+		}
+
+		auto output = static_cast<uint8_t*>(out_buffer);
+		size_t total_read = 0;
+
+		while (total_read < size)
+		{
+			const size_t chunk_size = (std::min)(size - total_read, static_cast<size_t>(MAX_VMEM_CHUNK_SIZE));
+
+			vmem_request request{};
+			request.guest_buffer = reinterpret_cast<uint64_t>(output + total_read);
+			request.target_va = target_va + total_read;
+			request.size = chunk_size;
+			request.target_cr3 = target_cr3;
+
+			uint64_t bytes_read = 0;
+			__try
+			{
+				bytes_read = __vmcall(hypercall_number::read_vmem, reinterpret_cast<uint64_t>(&request));
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				break;
+			}
+
+			if (bytes_read == 0)
+			{
+				break;
+			}
+
+			total_read += static_cast<size_t>(bytes_read);
+			if (bytes_read < chunk_size)
+			{
+				break;
+			}
+		}
+
+		return total_read;
+	}
+
+	size_t write_vmemory(uint64_t target_va, const void* in_buffer, size_t size, uint64_t target_cr3)
+	{
+		if (!in_buffer || size == 0)
+		{
+			return 0;
+		}
+
+		auto input = static_cast<const uint8_t*>(in_buffer);
+		size_t total_written = 0;
+
+		while (total_written < size)
+		{
+			const size_t chunk_size = (std::min)(size - total_written, static_cast<size_t>(MAX_VMEM_CHUNK_SIZE));
+
+			vmem_request request{};
+			request.guest_buffer = reinterpret_cast<uint64_t>(input + total_written);
+			request.target_va = target_va + total_written;
+			request.size = chunk_size;
+			request.target_cr3 = target_cr3;
+
+			uint64_t bytes_written = 0;
+			__try
+			{
+				bytes_written = __vmcall(hypercall_number::write_vmem, reinterpret_cast<uint64_t>(&request));
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER)
+			{
+				break;
+			}
+
+			if (bytes_written == 0)
+			{
+				break;
+			}
+
+			total_written += static_cast<size_t>(bytes_written);
+			if (bytes_written < chunk_size)
+			{
+				break;
+			}
+		}
+
+		return total_written;
 	}
 }  // namespace hv::hypercall

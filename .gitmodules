@@ -1,3 +1,9 @@
 [submodule "revhv-km/external/ia32-doc"]
 	path = revhv-km/external/ia32-doc
 	url = https://github.com/ia32-doc/ia32-doc
+[submodule "revhv-um/external/raw_pdb"]
+	path = revhv-um/external/raw_pdb
+	url = https://github.com/MolecularMatters/raw_pdb
+[submodule "revhv-um/external/phnt"]
+	path = revhv-um/external/phnt
+	url = https://github.com/winsiderss/phnt
