@@ -3,9 +3,11 @@
 #include "logger.hpp"
 #include "utils.hpp"
 #include "kmodules.h"
+#include "commands.h"
+#include <atomic>
 #include <iostream>
 
-void flush_thread()
+void flush_thread(std::atomic_bool& stop_requested)
 {
 	std::ofstream log_file("hv_logs.txt", std::ios::out);
 	if (!log_file.is_open())
@@ -14,7 +16,7 @@ void flush_thread()
 		return;
 	}
 
-	while (true)
+	while (!stop_requested.load(std::memory_order_relaxed))
 	{
 		std::vector<logging::standard_log_message> messages(100);
 		if (hv::hypercall::flush_std_logs(messages))
@@ -29,7 +31,7 @@ void flush_thread()
 		else
 		{
 			logger::error("Failed to flush standard logs from the hypervisor.");
-			return;
+			std::this_thread::sleep_for(1s);
 		}
 
 		// If the buffer was utilized fully, flush again immediately to avoid missing messages
@@ -75,9 +77,30 @@ int main()
 		system(cmd.c_str());
 	}
 
-	// Start the log flushing thread
-	std::thread log_flush_thread(flush_thread);
-	log_flush_thread.detach();
+	kmodule_context kmodules;
+	kmodules.refresh();
+
+	commands::engine cmd_engine(kmodules);
+	cmd_engine.print_general_help();
+
+	std::atomic_bool stop_flush_thread = false;
+	std::thread log_flush_thread(flush_thread, std::ref(stop_flush_thread));
+
+	while (true)
+	{
+		std::cout << "revhv> " << std::flush;
+
+		std::string line;
+		if (!std::getline(std::cin, line))
+			break;
+
+		if (!cmd_engine.execute_line(line))
+			break;
+	}
+
+	stop_flush_thread.store(true, std::memory_order_relaxed);
+	if (log_flush_thread.joinable())
+		log_flush_thread.join();
 
 	return 0;
 }

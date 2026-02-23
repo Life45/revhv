@@ -137,6 +137,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="commands.cpp" />
     <ClCompile Include="hypercall.cpp" />
     <ClCompile Include="kmodules.cpp" />
     <ClCompile Include="main.cpp" />
@@ -144,6 +145,7 @@
     <ClCompile Include="pe.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="commands.h" />
     <ClInclude Include="hypercall.h" />
     <ClInclude Include="includes.h" />
     <ClInclude Include="kmodules.h" />
