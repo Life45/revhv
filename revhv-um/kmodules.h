@@ -4,6 +4,7 @@
 
 class kmodule_context
 {
+public:
 	struct kmodule
 	{
 		uint64_t base;
@@ -34,4 +35,7 @@ public:
 	std::string resolve_address(uint64_t address);
 	std::optional<uint64_t> resolve_symbol(const std::string& symbol_str);
 	std::optional<kmodule> get_module_by_name(const std::string& name);
+
+	/// @brief Return a thread-safe snapshot of the full module list.
+	std::shared_ptr<const module_list> get_modules();
 };

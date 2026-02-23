@@ -151,6 +151,11 @@ std::optional<kmodule_context::kmodule> kmodule_context::get_module_by_name(cons
 	return std::nullopt;
 }
 
+std::shared_ptr<const kmodule_context::module_list> kmodule_context::get_modules()
+{
+	return snapshot();
+}
+
 std::optional<uint64_t> kmodule_context::resolve_symbol(const std::string& symbol_str)
 {
 	if (symbol_str.empty())
