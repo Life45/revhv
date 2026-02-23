@@ -101,20 +101,39 @@ std::string kmodule_context::resolve_address(uint64_t address)
 		if (!parsed)
 			return mod.name + "+" + utils::to_hexstr(rva);
 
+		// Build a "mod:section+offset" suffix for the containing section, if any.
+		const auto section_suffix = [&]() -> std::string
+		{
+			for (const auto& sect : parsed->get_sections())
+			{
+				if (rva >= sect.rva && rva < sect.rva + sect.size)
+					return mod.name + ":" + sect.name + "+" + utils::to_hexstr(rva - sect.rva);
+			}
+			return {};
+		};
+
+		const auto append_section = [&](std::string result) -> std::string
+		{
+			auto s = section_suffix();
+			if (!s.empty())
+				result += " | " + s;
+			return result;
+		};
+
 		auto symbol = parsed->get_closest_symbol(rva);
 
-		// If no symbol found, return module name + offset
+		// If no symbol found, return module name + offset (+ section if available)
 		if (!symbol)
-			return mod.name + "+" + utils::to_hexstr(rva);
+			return append_section(mod.name + "+" + utils::to_hexstr(rva));
 
 		auto offset = rva - symbol->rva;
 
 		// If the symbol is an exact match, return module name + symbol
 		if (offset == 0)
-			return mod.name + "!" + symbol->name;
+			return append_section(mod.name + "!" + symbol->name);
 
 		// Otherwise, return module name + symbol + offset
-		return mod.name + "!" + symbol->name + "+" + utils::to_hexstr(offset);
+		return append_section(mod.name + "!" + symbol->name + "+" + utils::to_hexstr(offset));
 	}
 
 	// Not inside any module, return the raw address
@@ -129,5 +148,146 @@ std::optional<kmodule_context::kmodule> kmodule_context::get_module_by_name(cons
 		if (mod.name == name)
 			return mod;
 	}
+	return std::nullopt;
+}
+
+std::optional<uint64_t> kmodule_context::resolve_symbol(const std::string& symbol_str)
+{
+	if (symbol_str.empty())
+		return std::nullopt;
+
+	// --- Split into module part, separator, and remainder ---
+	// Separators: '!' (symbol), ':' (section), '+' (direct offset from module base).
+	// The first occurrence determines the split.
+	std::string module_part;
+	char separator = '\0';
+	std::string rest;
+
+	const auto sep_pos = symbol_str.find_first_of("!:+");
+	if (sep_pos == std::string::npos)
+	{
+		module_part = symbol_str;
+	}
+	else
+	{
+		module_part = symbol_str.substr(0, sep_pos);
+		separator = symbol_str[sep_pos];
+		rest = symbol_str.substr(sep_pos + 1);
+	}
+
+	// --- Strip known file extensions from the module part ---
+	// e.g. "ntoskrnl.sys" -> "ntoskrnl"
+	static constexpr std::string_view known_exts[] = {".sys", ".dll", ".exe"};
+	for (const auto& ext : known_exts)
+	{
+		if (module_part.size() > ext.size())
+		{
+			std::string suffix = module_part.substr(module_part.size() - ext.size());
+			std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::tolower);
+			if (suffix == ext)
+			{
+				module_part.erase(module_part.size() - ext.size());
+				break;
+			}
+		}
+	}
+
+	// --- Apply well-known module aliases ---
+	if (module_part == "nt")
+		module_part = "ntoskrnl";
+
+	// --- Look up the module ---
+	auto mod_opt = get_module_by_name(module_part);
+	if (!mod_opt)
+		return std::nullopt;
+
+	const auto& mod = *mod_opt;
+
+	// No separator: return the module base address.
+	if (separator == '\0')
+		return mod.base;
+
+	// Helper: parse an offset string that is always treated as hexadecimal,
+	// with or without a leading "0x"/"0X" prefix.
+	const auto parse_hex_offset = [](const std::string& s, uint64_t& out) -> bool
+	{
+		if (s.empty())
+			return false;
+		try
+		{
+			out = std::stoull(s, nullptr, 16);
+			return true;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	};
+
+	// --- '+' separator: module base + direct hex offset ---
+	// e.g. "wdfilter+0x100f", "ntoskrnl.sys+0x12"
+	if (separator == '+')
+	{
+		uint64_t offset = 0;
+		if (!parse_hex_offset(rest, offset))
+			return std::nullopt;
+		return mod.base + offset;
+	}
+
+	// For '!' and ':' the remainder may end with an optional "+<offset>".
+	std::string name_part;
+	uint64_t trailing_offset = 0;
+
+	const auto plus_pos = rest.find('+');
+	if (plus_pos != std::string::npos)
+	{
+		name_part = rest.substr(0, plus_pos);
+		if (!parse_hex_offset(rest.substr(plus_pos + 1), trailing_offset))
+			return std::nullopt;
+	}
+	else
+	{
+		name_part = rest;
+	}
+
+	// --- ':' separator: section lookup ---
+	// e.g. "nt:.text", "nt:.text+0x1000"
+	if (separator == ':')
+	{
+		const pe* parsed = ensure_parsed(mod);
+		if (!parsed)
+			return std::nullopt;
+
+		// Normalise by stripping a leading '.' for comparison.
+		const auto strip_dot = [](const std::string& s) -> std::string
+		{
+			return (!s.empty() && s[0] == '.') ? s.substr(1) : s;
+		};
+
+		const std::string cmp = strip_dot(name_part);
+		for (const auto& sect : parsed->get_sections())
+		{
+			if (strip_dot(sect.name) == cmp)
+				return mod.base + sect.rva + trailing_offset;
+		}
+		return std::nullopt;
+	}
+
+	// --- '!' separator: symbol lookup ---
+	// e.g. "ntoskrnl!MmCopyMemory", "ntoskrnl!MmCopyMemory+0x3f"
+	if (separator == '!')
+	{
+		const pe* parsed = ensure_parsed(mod);
+		if (!parsed)
+			return std::nullopt;
+
+		for (const auto& sym : parsed->get_symbols())
+		{
+			if (sym.name == name_part)
+				return mod.base + sym.rva + trailing_offset;
+		}
+		return std::nullopt;
+	}
+
 	return std::nullopt;
 }
