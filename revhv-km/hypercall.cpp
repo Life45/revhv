@@ -1,6 +1,7 @@
 #include "hypercall.h"
 #include "introspection.h"
 #include "hv.h"
+#include "vmx.h"
 
 namespace hv::hypercall
 {
@@ -131,6 +132,28 @@ namespace hv::hypercall
 		guest_context->rax = flushed;
 	}
 
+	static void handle_ept_hook(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		// RDX is the original PFN, and R8 is the hook PFN
+		uint64_t orig_pfn = guest_context->rdx;
+		uint64_t hook_pfn = guest_context->r8;
+
+		// TODO: Do this for all EPTPs when multiple EPTPs are supported, currently we only have one EPTP so it's fine
+
+		if (hv::ept::add_hook(vcpu->ept_pages, orig_pfn, hook_pfn))
+		{
+			LOG_INFO("Added EPT hook: original PFN 0x%llx -> hook PFN 0x%llx", orig_pfn, hook_pfn);
+			guest_context->rax = 1;	 // Success
+		}
+		else
+		{
+			LOG_ERROR("Failed to add EPT hook: original PFN 0x%llx -> hook PFN 0x%llx", orig_pfn, hook_pfn);
+			guest_context->rax = 0;	 // Failure
+		}
+
+		vmx::invept(invept_all_context, 0);
+	}
+
 	bool handle_hypercall(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		// Rax must be the hypercall key, otherwise it's not a valid hypercall and we should inject #UD
@@ -152,6 +175,9 @@ namespace hv::hypercall
 			break;
 		case hypercall_number::write_vmem:
 			handle_vmem_write(guest_context, vcpu);
+			break;
+		case hypercall_number::ept_hook:
+			handle_ept_hook(guest_context, vcpu);
 			break;
 		default:
 			LOG_WARNING("Received unknown hypercall number: %llu", guest_context->rcx);

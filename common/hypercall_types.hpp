@@ -25,6 +25,7 @@ namespace hv::hypercall
 		flush_standard_logs,
 		read_vmem,
 		write_vmem,
+		ept_hook,
 		hypercall_max
 	};
 }  // namespace hv::hypercall

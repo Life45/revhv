@@ -74,7 +74,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
     <Inf2CatUseLocalTime>true</Inf2CatUseLocalTime>
-    <IncludePath>$(ProjectDir)external\ia32-doc\out;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)common\external\Zydis;$(ProjectDir)external\ia32-doc\out;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
@@ -93,6 +93,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>ZYDIS_STATIC_BUILD;ZYAN_NO_LIBC;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -117,6 +118,7 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\external\Zydis\Zydis.c" />
     <ClCompile Include="apic.cpp" />
     <ClCompile Include="ept.cpp" />
     <ClCompile Include="error.cpp" />
@@ -124,6 +126,7 @@
     <ClCompile Include="format.cpp" />
     <ClCompile Include="gdt.cpp" />
     <ClCompile Include="hv.cpp" />
+    <ClCompile Include="hooks.cpp" />
     <ClCompile Include="hypercall.cpp" />
     <ClCompile Include="idt.cpp" />
     <ClCompile Include="introspection.cpp" />
@@ -138,6 +141,7 @@
     <ClCompile Include="vmx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\external\Zydis\Zydis.h" />
     <ClInclude Include="apic.h" />
     <ClInclude Include="ept.h" />
     <ClInclude Include="error.h" />
@@ -146,6 +150,7 @@
     <ClInclude Include="format.h" />
     <ClInclude Include="gdt.h" />
     <ClInclude Include="hv.h" />
+    <ClInclude Include="hooks.h" />
     <ClInclude Include="hypercall.h" />
     <ClInclude Include="idt.h" />
     <ClInclude Include="includes.h" />

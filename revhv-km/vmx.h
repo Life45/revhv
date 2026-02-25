@@ -1,6 +1,7 @@
 #pragma once
 #include "includes.h"
 #include "vcpu.h"
+#include "../common/hypercall_types.hpp"
 
 namespace hv::vmx
 {
@@ -28,6 +29,7 @@ namespace hv::vmx
 	bool launch_vm();
 
 	extern "C" void __invept(invept_type type, const invept_descriptor* descriptor);
+	extern "C" uint64_t __vmcall(uint64_t number, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0, uint64_t key = hypercall::HYPERCALL_KEY);
 }  // namespace hv::vmx
 
 // Inline wrappers
@@ -165,5 +167,10 @@ namespace hv::vmx
 	inline vcpu::vcpu* current_vcpu()
 	{
 		return reinterpret_cast<vcpu::vcpu*>(_readfsbase_u64());
+	}
+
+	inline uint64_t vmx_vmcall(uint64_t number, uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0, uint64_t key = hypercall::HYPERCALL_KEY)
+	{
+		return __vmcall(number, arg1, arg2, arg3, key);
 	}
 }  // namespace hv::vmx

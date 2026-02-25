@@ -215,4 +215,69 @@ namespace hv::ept
 			}
 		}
 	}
+
+	ept_pte* get_ept_pte(ept_pages& ept_pages, uint64_t gpa, bool force_split)
+	{
+		const memory::pml4_virtual_address pa = {reinterpret_cast<void*>(gpa)};
+
+		if (pa.pml4_idx != 0)
+			return nullptr;
+
+		if (pa.pdpt_idx >= ept_pd_count)
+			return nullptr;
+
+		auto& pde_2mb = ept_pages.pde_2mb[pa.pdpt_idx][pa.pd_idx];
+
+		if (pde_2mb.large_page)
+		{
+			if (!force_split)
+				return nullptr;
+
+			if (!split_pde(ept_pages, &pde_2mb))
+			{
+				LOG_ERROR("Failed to split EPT PDE for GPA 0x%llx", gpa);
+				return nullptr;
+			}
+		}
+
+		const auto pt = reinterpret_cast<ept_pte*>(memory::host_physical_base + (ept_pages.pde_split[pa.pdpt_idx][pa.pd_idx].page_frame_number << 12));
+
+		return &pt[pa.pt_idx];
+	}
+
+	bool add_hook(ept_pages& ept_pages, uint64_t orig_pfn, uint64_t hook_pfn)
+	{
+		if (ept_pages.hook_count >= ept_max_hook_count)
+		{
+			LOG_ERROR("Maximum EPT hook count reached, cannot add more hooks");
+			return false;
+		}
+
+		auto pte = get_ept_pte(ept_pages, orig_pfn << 12, true);
+		if (!pte)
+		{
+			LOG_ERROR("Failed to get EPT PTE for original PFN 0x%llx, cannot add hook", orig_pfn);
+			return false;
+		}
+
+		auto& hook = ept_pages.hooks[ept_pages.hook_count++];
+		hook.orig_pfn = static_cast<uint32_t>(orig_pfn);
+		hook.hook_pfn = static_cast<uint32_t>(hook_pfn);
+		hook.pte = pte;
+
+		pte->execute_access = 0;
+		return true;
+	}
+
+	ept_hook* get_hook_by_orig_pfn(ept_pages& ept_pages, uint64_t orig_pfn)
+	{
+		for (size_t i = 0; i < ept_pages.hook_count; i++)
+		{
+			if (ept_pages.hooks[i].orig_pfn == orig_pfn)
+			{
+				return &ept_pages.hooks[i];
+			}
+		}
+		return nullptr;
+	}
 }  // namespace hv::ept

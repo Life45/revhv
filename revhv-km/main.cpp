@@ -1,6 +1,7 @@
 #include "includes.h"
 #include "serial.h"
 #include "hv.h"
+#include "hooks.h"
 
 EXTERN_C VOID DriverUnload(PDRIVER_OBJECT DriverObject)
 {
@@ -37,5 +38,8 @@ EXTERN_C NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regis
 	}
 
 	LOG_INFO("Hypervisor started successfully");
+
+	hv::hooks::initialize();
+
 	return STATUS_SUCCESS;
 }

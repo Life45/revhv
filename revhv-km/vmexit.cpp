@@ -282,6 +282,41 @@ namespace hv::vmexit
 		vmx::inject_hw_exception(invalid_opcode);
 	}
 
+	static void handle_ept_violation(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		vmx_exit_qualification_ept_violation qualification;
+		qualification.flags = vmx::vmx_vmread(VMCS_EXIT_QUALIFICATION);
+
+		// guest physical address that caused the ept-violation
+		const auto physical_address = vmx::vmx_vmread(qualification.caused_by_translation ? VMCS_GUEST_PHYSICAL_ADDRESS : VMCS_EXIT_GUEST_LINEAR_ADDRESS);
+
+		const auto hook = ept::get_hook_by_orig_pfn(vcpu->ept_pages, physical_address >> 12);
+		if (!hook)
+		{
+			LOG_ERROR("EPT violation for unmapped GPA: %llx", physical_address);
+			error::unrecoverable_host_error(vcpu);
+			// should never reach here
+		}
+
+		// TODO: Check out sub-page granularity
+
+		auto pte = hook->pte;
+		if (qualification.execute_access)
+		{
+			pte->read_access = 0;
+			pte->write_access = 0;
+			pte->execute_access = 1;
+			pte->page_frame_number = hook->hook_pfn;
+		}
+		else
+		{
+			pte->read_access = 1;
+			pte->write_access = 1;
+			pte->execute_access = 0;
+			pte->page_frame_number = hook->orig_pfn;
+		}
+	}
+
 	void handler(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		vcpu->guest_context = guest_context;
@@ -331,6 +366,9 @@ namespace hv::vmexit
 				break;
 			}
 			advance_guest_rip();
+			break;
+		case VMX_EXIT_REASON_EPT_VIOLATION:
+			handle_ept_violation(guest_context, vcpu);
 			break;
 		case VMX_EXIT_REASON_EXECUTE_INVEPT:
 		case VMX_EXIT_REASON_EXECUTE_INVVPID:
