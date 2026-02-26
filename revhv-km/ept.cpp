@@ -317,6 +317,49 @@ namespace hv::ept
 		return nullptr;
 	}
 
+	void deactivate_hooks(ept_pages& ept_pages)
+	{
+		for (size_t i = 0; i < ept_pages.hook_count; i++)
+		{
+			auto& hook = ept_pages.hooks[i];
+			if (!hook.pte)
+				continue;
+
+			// Restore original PFN with full RWX permissions
+			hook.pte->read_access = 1;
+			hook.pte->write_access = 1;
+			hook.pte->execute_access = 1;
+			hook.pte->page_frame_number = hook.orig_pfn;
+
+			// Mark hook as inactive
+			hook.pte = nullptr;
+		}
+	}
+
+	void reactivate_hooks(ept_pages& ept_pages)
+	{
+		for (size_t i = 0; i < ept_pages.hook_count; i++)
+		{
+			auto& hook = ept_pages.hooks[i];
+			if (hook.pte)
+				continue;  // Already active
+
+			// Re-lookup the PTE for this hook's original PFN
+			auto pte = get_ept_pte(ept_pages, static_cast<uint64_t>(hook.orig_pfn) << 12);
+			if (!pte)
+			{
+				LOG_ERROR("Failed to re-lookup PTE for hook orig_pfn 0x%x during reactivation", hook.orig_pfn);
+				continue;
+			}
+
+			// Re-apply hook: original PFN stays, but mark execute as forbidden so
+			// the EPT violation handler can swap to hook_pfn on execute access
+			pte->page_frame_number = hook.orig_pfn;
+			pte->execute_access = 0;
+			hook.pte = pte;
+		}
+	}
+
 	bool enable_auto_trace(ept_pages& normal_ept, ept_pages& target_ept, uint64_t target_va, size_t target_size)
 	{
 		//

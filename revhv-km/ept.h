@@ -62,6 +62,16 @@ namespace hv::ept
 	/// @param ept_pages The EPT pages to search
 	ept_hook* get_hook_by_orig_pfn(ept_pages& ept_pages, uint64_t orig_pfn);
 
+	/// @brief Deactivates all EPT hooks by restoring original PFNs and full RWX permissions.
+	///        Sets each hook's pte to nullptr. Does not invept, caller should do it.
+	/// @param ept_pages The EPT pages containing hooks to deactivate
+	void deactivate_hooks(ept_pages& ept_pages);
+
+	/// @brief Reactivates previously deactivated EPT hooks by re-looking up PTEs and
+	///        setting execute_access=0. Does not invept, caller should do it.
+	/// @param ept_pages The EPT pages containing hooks to reactivate
+	void reactivate_hooks(ept_pages& ept_pages);
+
 	/// @brief Sets up and enables auto tracing for given guest VA range. Does not invept, caller should do it after this.
 	/// @param normal_ept The EPT used for normal execution
 	/// @param target_ept The EPT used for when target is executing

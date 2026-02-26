@@ -295,7 +295,7 @@ namespace hv::vmexit
 		const auto physical_address = vmx::vmx_vmread(qualification.caused_by_translation ? VMCS_GUEST_PHYSICAL_ADDRESS : VMCS_EXIT_GUEST_LINEAR_ADDRESS);
 
 		const auto hook = ept::get_hook_by_orig_pfn(current_ept_pages, physical_address >> 12);
-		if (hook)
+		if (hook && hook->pte)
 		{
 			auto pte = hook->pte;
 			if (qualification.execute_access)

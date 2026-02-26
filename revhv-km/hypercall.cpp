@@ -158,6 +158,10 @@ namespace hv::hypercall
 		uint64_t target_va = guest_context->rdx;
 		uint64_t target_size = guest_context->r8;
 
+		// Deactivate EPT hooks before enabling auto-trace to avoid permission conflicts
+		ept::deactivate_hooks(vcpu->ept_pages_normal);
+		ept::deactivate_hooks(vcpu->ept_pages_target);
+
 		if (ept::enable_auto_trace(vcpu->ept_pages_normal, vcpu->ept_pages_target, target_va, target_size))
 		{
 			LOG_INFO("Successfully enabled auto-trace.");
@@ -172,6 +176,12 @@ namespace hv::hypercall
 		else
 		{
 			LOG_ERROR("Failed to enable auto-trace for VA range 0x%llx - 0x%llx", target_va, target_va + target_size);
+
+			// Reactivate hooks since auto-trace failed
+			ept::reactivate_hooks(vcpu->ept_pages_normal);
+			ept::reactivate_hooks(vcpu->ept_pages_target);
+			vmx::invept(invept_all_context, 0);
+
 			guest_context->rax = 0;	 // Failure
 		}
 	}
@@ -179,11 +189,16 @@ namespace hv::hypercall
 	static void handle_disable_auto_trace(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		ept::restore_auto_trace(vcpu->ept_pages_normal, vcpu->ept_pages_target);
+
+		// Reactivate EPT hooks now that auto-trace permissions are restored
+		ept::reactivate_hooks(vcpu->ept_pages_normal);
+		ept::reactivate_hooks(vcpu->ept_pages_target);
+
 		vmx::change_eptp(vcpu->eptp_normal_execution);
 		vcpu->in_normal_execution = true;
 		vmx::invept(invept_all_context, 0);
 
-		LOG_INFO("Auto-trace disabled, switched back to normal EPTP");
+		LOG_INFO("Auto-trace disabled, switched back to normal EPTP, hooks reactivated");
 	}
 
 	bool handle_hypercall(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)

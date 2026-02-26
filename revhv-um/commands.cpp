@@ -156,6 +156,7 @@ namespace commands
 				  << "  d/db, dw, dd, dq, dp   Memory dumps (bytes/words/dwords/qwords/pointers)\n"
 				  << "  ln                      Resolve an address/symbol\n"
 				  << "  lm                      List loaded kernel modules\n"
+				  << "  at                      Configure auto-trace (enable/disable)\n"
 				  << "  q, quit, exit           Exit revhv-um\n"
 				  << "\n"
 				  << "Integer parsing: all numeric inputs are treated as hexadecimal.\n"
@@ -209,6 +210,23 @@ namespace commands
 					  << "Examples:\n"
 					  << "  lm\n"
 					  << "  lm nt\n";
+			return;
+		}
+
+		if (cmd == "at")
+		{
+			std::cout << "Usage:\n"
+					  << "  at enable <address|symbol> <size>\n"
+					  << "  at disable\n"
+					  << "\n"
+					  << "  enable: Activates auto-trace for the provided range.\n"
+					  << "  disable: Disables auto-trace.\n"
+					  << "  size   : Hex size of traced range (must be > 0).\n"
+					  << "  Note   : All integer values are hexadecimal.\n"
+					  << "Examples:\n"
+					  << "  at enable nt!NtCreateFile 20\n"
+					  << "  at enable fffff80312345678 100\n"
+					  << "  at disable\n";
 			return;
 		}
 
@@ -443,23 +461,77 @@ namespace commands
 
 	bool engine::handle_at(const std::vector<std::string>& args)
 	{
-		uint64_t resolved_address = 0;
-		if (!parse_u64_token(args[1], resolved_address))
+		if (args.size() >= 2 && to_lower(args[1]) == "help")
 		{
-			logger::warn("Failed to resolve expression: '{}'", args[1]);
+			print_help_for("at");
+			return true;
+		}
+
+		if (args.size() < 2)
+		{
+			logger::warn("Missing subcommand for 'at' (expected 'enable' or 'disable')");
+			print_help_for("at");
+			return true;
+		}
+
+		const std::string subcommand = to_lower(args[1]);
+		if (subcommand == "disable")
+		{
+			if (args.size() != 2)
+			{
+				logger::warn("'at disable' does not accept additional arguments");
+				print_help_for("at");
+				return true;
+			}
+
+			if (!hv::hypercall::auto_trace_disable())
+				logger::error("Failed to disable auto-trace");
+			else
+				std::cout << "Auto-trace disabled\n";
+
+			return true;
+		}
+
+		if (subcommand != "enable")
+		{
+			logger::warn("Unknown at subcommand '{}'", args[1]);
+			print_help_for("at");
+			return true;
+		}
+
+		if (args.size() != 4)
+		{
+			logger::warn("'at enable' expects exactly two arguments: <address|symbol> <size>");
+			print_help_for("at");
+			return true;
+		}
+
+		m_modules.refresh();
+
+		uint64_t resolved_address = 0;
+		if (!parse_expression(args[2], resolved_address))
+		{
+			logger::warn("Failed to resolve expression: '{}'", args[2]);
 			return true;
 		}
 
 		uint64_t size = 0;
-		if (!parse_u64_token(args[2], size))
+		if (!parse_u64_token(args[3], size))
 		{
-			logger::warn("Invalid size '{}' (hex expected)", args[2]);
+			logger::warn("Invalid size '{}' (hex expected)", args[3]);
+			return true;
+		}
+
+		if (size == 0)
+		{
+			logger::warn("Auto-trace size must be greater than 0");
 			return true;
 		}
 
 		if (!hv::hypercall::auto_trace_enable(resolved_address, size))
 		{
 			logger::error("Failed to enable auto-trace at 0x{:x} (size: 0x{:x})", resolved_address, size);
+			return true;
 		}
 
 		std::cout << std::format("Auto-trace enabled at 0x{:x} (size: 0x{:x})\n", resolved_address, size);
