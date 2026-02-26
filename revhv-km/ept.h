@@ -61,4 +61,17 @@ namespace hv::ept
 	/// @brief Gets an EPT hook by the original PFN. Returns nullptr if not found.
 	/// @param ept_pages The EPT pages to search
 	ept_hook* get_hook_by_orig_pfn(ept_pages& ept_pages, uint64_t orig_pfn);
+
+	/// @brief Sets up and enables auto tracing for given guest VA range. Does not invept, caller should do it after this.
+	/// @param normal_ept The EPT used for normal execution
+	/// @param target_ept The EPT used for when target is executing
+	/// @param target_va The guest virtual address
+	/// @param target_size The size of the guest virtual address range
+	/// @return True if auto tracing was successfully enabled, false otherwise
+	bool enable_auto_trace(ept_pages& normal_ept, ept_pages& target_ept, uint64_t target_va, size_t target_size);
+
+	/// @brief Restores permissions changed by auto trace setup. Caller should switch to normal EPTP before or after this and invept to apply the changes.
+	/// @param normal_ept The EPT used for normal execution
+	/// @param target_ept The EPT used for when target is executing
+	void restore_auto_trace(ept_pages& normal_ept, ept_pages& target_ept);
 }  // namespace hv::ept

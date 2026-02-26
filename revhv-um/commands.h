@@ -30,6 +30,7 @@ namespace commands
 		bool handle_dump(const std::vector<std::string>& args, dump_kind kind);
 		bool handle_ln(const std::vector<std::string>& args);
 		bool handle_lm(const std::vector<std::string>& args);
+		bool handle_at(const std::vector<std::string>& args);
 
 		bool parse_expression(const std::string& token, uint64_t& value) const;
 		static bool parse_u64_token(const std::string& token, uint64_t& value);

@@ -211,11 +211,14 @@ namespace hv::vcpu
 
 		alignas(0x1000) vmx_msr_bitmap msr_bitmap;
 
-		alignas(0x1000) ept::ept_pages ept_pages;
+		alignas(0x1000) ept::ept_pages ept_pages_normal;
+		alignas(0x1000) ept::ept_pages ept_pages_target;
 
 		uint8_t hypercall_local_buffer[hypercall::MAX_VMEM_CHUNK_SIZE];
 
-		ept_pointer eptp;
+		bool in_normal_execution;
+		ept_pointer eptp_normal_execution;
+		ept_pointer eptp_target_execution;
 
 		guest_context* guest_context;
 

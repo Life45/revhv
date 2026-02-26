@@ -38,4 +38,7 @@ namespace hv::hypercall
 	/// @param target_cr3 Target address space CR3 (0 = system CR3)
 	/// @return Number of bytes written
 	size_t write_vmemory(uint64_t target_va, const void* in_buffer, size_t size, uint64_t target_cr3 = 0);
+
+	bool auto_trace_enable(uint64_t target_va, size_t target_size);
+	bool auto_trace_disable();
 }  // namespace hv::hypercall

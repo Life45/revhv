@@ -1,7 +1,42 @@
 #include "ept.h"
+#include "hv.h"
 
 namespace hv::ept
 {
+	static void set_all_permissions(ept_pages& ept_pages, bool read, bool write, bool execute)
+	{
+		ept_pml4e& pml4e = ept_pages.pml4e[0];
+		for (size_t i = 0; i < ept_pd_count; i++)
+		{
+			ept_pdpte& pdpte = ept_pages.pdpte[i];
+
+			for (size_t j = 0; j < 512; j++)
+			{
+				// 2MB large PDEs
+				ept_pde_2mb& pde_2mb = ept_pages.pde_2mb[i][j];
+				if (pde_2mb.large_page)
+				{
+					pde_2mb.read_access = read ? 1 : 0;
+					pde_2mb.write_access = write ? 1 : 0;
+					pde_2mb.execute_access = execute ? 1 : 0;
+				}
+			}
+		}
+
+		// Split PDEs
+		for (size_t i = 0; i < ept_split_pte_count; i++)
+		{
+			ept_pte* pt = reinterpret_cast<ept_pte*>(&ept_pages.split_pte[i]);
+			for (size_t j = 0; j < 512; j++)
+			{
+				ept_pte& pte = pt[j];
+				pte.read_access = read ? 1 : 0;
+				pte.write_access = write ? 1 : 0;
+				pte.execute_access = execute ? 1 : 0;
+			}
+		}
+	}
+
 	bool split_pde(ept_pages& ept_pages, ept_pde_2mb* pde_2mb, ept_pte** out_pt = nullptr)
 	{
 		if (pde_2mb->large_page == 0)
@@ -13,6 +48,7 @@ namespace hv::ept
 		if (ept_pages.split_pte_used >= ept_split_pte_count)
 		{
 			// No more split PTs available
+			LOG_ERROR("No more free split PTs available");
 			return false;
 		}
 
@@ -279,5 +315,58 @@ namespace hv::ept
 			}
 		}
 		return nullptr;
+	}
+
+	bool enable_auto_trace(ept_pages& normal_ept, ept_pages& target_ept, uint64_t target_va, size_t target_size)
+	{
+		//
+		// We set target pages as NX for the normal EPT, and set all pages as NX except the target pages for the target EPT. We force split PDEs as we go.
+		//
+
+		// Page align the target VA
+		const uint64_t page_aligned_va = target_va & ~0xFFFULL;
+		const uint64_t page_aligned_end = (target_va + target_size + 0xFFFULL) & ~0xFFFULL;
+		const size_t aligned_size = page_aligned_end - page_aligned_va;
+
+		LOG_INFO("Enabling auto trace for target VA 0x%llx (aligned 0x%llx), size 0x%llx (aligned 0x%llx)", target_va, page_aligned_va, target_size, aligned_size);
+
+		// Set all EPT pages to non-executable first in the target range, we will set the target pages back to executable in the target EPT
+		set_all_permissions(target_ept, true, true, false);
+
+		// Iterate physical pages backing the target VA range
+		for (size_t offset = 0; offset < aligned_size; offset += 0x1000)
+		{
+			const uint64_t current_va = page_aligned_va + offset;
+
+			// Get GPA for the current VA
+			auto gpa = memory::gva_to_gpa(hv::g_hv.system_cr3, current_va, nullptr);
+
+			if (!gpa)
+			{
+				LOG_ERROR("Failed to translate target VA 0x%llx to GPA, it might be paged out.", current_va);
+				continue;
+			}
+
+			auto pte_normal = get_ept_pte(normal_ept, gpa, true);
+			auto pte_target = get_ept_pte(target_ept, gpa, true);
+			if (!pte_normal || !pte_target)
+			{
+				LOG_ERROR("Failed to get EPT PTE for GPA 0x%llx. This shouldn't happen, bailing out. Are there enough free split pages ?", gpa);
+				set_all_permissions(normal_ept, true, true, true);
+				set_all_permissions(target_ept, true, true, true);
+				return false;
+			}
+
+			pte_normal->execute_access = 0;
+			pte_target->execute_access = 1;
+		}
+
+		return true;
+	}
+
+	void restore_auto_trace(ept_pages& normal_ept, ept_pages& target_ept)
+	{
+		set_all_permissions(normal_ept, true, true, true);
+		set_all_permissions(target_ept, true, true, true);
 	}
 }  // namespace hv::ept

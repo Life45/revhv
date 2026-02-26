@@ -318,13 +318,22 @@ namespace hv::vmcs
 		//
 		// 26.6.11 Extended-Page-Table Pointer (EPTP)
 		//
-		ept::initialize_ept(vcpu->ept_pages, vcpu->mtrr_state);
+		ept::initialize_ept(vcpu->ept_pages_normal, vcpu->mtrr_state);
+		ept::initialize_ept(vcpu->ept_pages_target, vcpu->mtrr_state);
 
-		vcpu->eptp.flags = 0;
-		vcpu->eptp.page_walk_length = 4 - 1;			  // 4 levels of paging
-		vcpu->eptp.memory_type = MEMORY_TYPE_WRITE_BACK;  // Write-back memory
-		vcpu->eptp.page_frame_number = MmGetPhysicalAddress(&vcpu->ept_pages.pml4e).QuadPart >> 12;
-		if (!vmx::vmx_vmwrite(VMCS_CTRL_EPT_POINTER, vcpu->eptp.flags))
+		vcpu->eptp_normal_execution.flags = 0;
+		vcpu->eptp_normal_execution.page_walk_length = 4 - 1;			   // 4 levels of paging
+		vcpu->eptp_normal_execution.memory_type = MEMORY_TYPE_WRITE_BACK;  // Write-back memory
+		vcpu->eptp_normal_execution.page_frame_number = MmGetPhysicalAddress(&vcpu->ept_pages_normal.pml4e).QuadPart >> 12;
+
+		vcpu->eptp_target_execution.flags = 0;
+		vcpu->eptp_target_execution.page_walk_length = 4 - 1;			   // 4 levels of paging
+		vcpu->eptp_target_execution.memory_type = MEMORY_TYPE_WRITE_BACK;  // Write-back memory
+		vcpu->eptp_target_execution.page_frame_number = MmGetPhysicalAddress(&vcpu->ept_pages_target.pml4e).QuadPart >> 12;
+
+		// Start with normal execution EPTP
+		vcpu->in_normal_execution = true;
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_EPT_POINTER, vcpu->eptp_normal_execution.flags))
 		{
 			LOG_ERROR("Failed to write EPTP to VMCS");
 			return false;

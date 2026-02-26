@@ -441,6 +441,31 @@ namespace commands
 		return true;
 	}
 
+	bool engine::handle_at(const std::vector<std::string>& args)
+	{
+		uint64_t resolved_address = 0;
+		if (!parse_u64_token(args[1], resolved_address))
+		{
+			logger::warn("Failed to resolve expression: '{}'", args[1]);
+			return true;
+		}
+
+		uint64_t size = 0;
+		if (!parse_u64_token(args[2], size))
+		{
+			logger::warn("Invalid size '{}' (hex expected)", args[2]);
+			return true;
+		}
+
+		if (!hv::hypercall::auto_trace_enable(resolved_address, size))
+		{
+			logger::error("Failed to enable auto-trace at 0x{:x} (size: 0x{:x})", resolved_address, size);
+		}
+
+		std::cout << std::format("Auto-trace enabled at 0x{:x} (size: 0x{:x})\n", resolved_address, size);
+		return true;
+	}
+
 	bool engine::execute_line(const std::string& line)
 	{
 		try
@@ -483,6 +508,9 @@ namespace commands
 
 			if (cmd == "lm")
 				return handle_lm(tokens);
+
+			if (cmd == "at")
+				return handle_at(tokens);
 
 			m_modules.refresh();
 			const std::string expression = join_tokens(tokens, 0);

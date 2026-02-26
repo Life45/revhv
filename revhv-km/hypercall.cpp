@@ -138,9 +138,7 @@ namespace hv::hypercall
 		uint64_t orig_pfn = guest_context->rdx;
 		uint64_t hook_pfn = guest_context->r8;
 
-		// TODO: Do this for all EPTPs when multiple EPTPs are supported, currently we only have one EPTP so it's fine
-
-		if (hv::ept::add_hook(vcpu->ept_pages, orig_pfn, hook_pfn))
+		if (ept::add_hook(vcpu->ept_pages_normal, orig_pfn, hook_pfn) && ept::add_hook(vcpu->ept_pages_target, orig_pfn, hook_pfn))
 		{
 			LOG_INFO("Added EPT hook: original PFN 0x%llx -> hook PFN 0x%llx", orig_pfn, hook_pfn);
 			guest_context->rax = 1;	 // Success
@@ -152,6 +150,40 @@ namespace hv::hypercall
 		}
 
 		vmx::invept(invept_all_context, 0);
+	}
+
+	static void handle_enable_auto_trace(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		// RDX is the VA, R8 is the size of the target
+		uint64_t target_va = guest_context->rdx;
+		uint64_t target_size = guest_context->r8;
+
+		if (ept::enable_auto_trace(vcpu->ept_pages_normal, vcpu->ept_pages_target, target_va, target_size))
+		{
+			LOG_INFO("Successfully enabled auto-trace.");
+
+			// Start with normal EPTP, the EPT violation handler will switch when target starts executing
+			vmx::change_eptp(vcpu->eptp_normal_execution);
+			vcpu->in_normal_execution = true;
+			vmx::invept(invept_all_context, 0);
+
+			guest_context->rax = 1;	 // Success
+		}
+		else
+		{
+			LOG_ERROR("Failed to enable auto-trace for VA range 0x%llx - 0x%llx", target_va, target_va + target_size);
+			guest_context->rax = 0;	 // Failure
+		}
+	}
+
+	static void handle_disable_auto_trace(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		ept::restore_auto_trace(vcpu->ept_pages_normal, vcpu->ept_pages_target);
+		vmx::change_eptp(vcpu->eptp_normal_execution);
+		vcpu->in_normal_execution = true;
+		vmx::invept(invept_all_context, 0);
+
+		LOG_INFO("Auto-trace disabled, switched back to normal EPTP");
 	}
 
 	bool handle_hypercall(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
@@ -178,6 +210,12 @@ namespace hv::hypercall
 			break;
 		case hypercall_number::ept_hook:
 			handle_ept_hook(guest_context, vcpu);
+			break;
+		case hypercall_number::enable_auto_trace:
+			handle_enable_auto_trace(guest_context, vcpu);
+			break;
+		case hypercall_number::disable_auto_trace:
+			handle_disable_auto_trace(guest_context, vcpu);
 			break;
 		default:
 			LOG_WARNING("Received unknown hypercall number: %llu", guest_context->rcx);

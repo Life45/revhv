@@ -181,7 +181,8 @@ namespace hv::vmexit
 		{
 			LOG_INFO("Guest wrote to MTRR MSR: 0x%X. EPT memory types will be updated.", msr);
 			memory::read_mtrrs(vcpu->mtrr_state);
-			ept::update_ept_memory_types(vcpu->ept_pages, vcpu->mtrr_state);
+			ept::update_ept_memory_types(vcpu->ept_pages_normal, vcpu->mtrr_state);
+			ept::update_ept_memory_types(vcpu->ept_pages_target, vcpu->mtrr_state);
 			vmx::invept(invept_all_context, 0);
 
 			// Making sure MTRRs are consistent across cores is the guest's responsibility.
@@ -284,36 +285,58 @@ namespace hv::vmexit
 
 	static void handle_ept_violation(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
+		const auto& current_eptp = vcpu->in_normal_execution ? vcpu->eptp_normal_execution : vcpu->eptp_target_execution;
+		auto& current_ept_pages = vcpu->in_normal_execution ? vcpu->ept_pages_normal : vcpu->ept_pages_target;
+
 		vmx_exit_qualification_ept_violation qualification;
 		qualification.flags = vmx::vmx_vmread(VMCS_EXIT_QUALIFICATION);
 
 		// guest physical address that caused the ept-violation
 		const auto physical_address = vmx::vmx_vmread(qualification.caused_by_translation ? VMCS_GUEST_PHYSICAL_ADDRESS : VMCS_EXIT_GUEST_LINEAR_ADDRESS);
 
-		const auto hook = ept::get_hook_by_orig_pfn(vcpu->ept_pages, physical_address >> 12);
-		if (!hook)
+		const auto hook = ept::get_hook_by_orig_pfn(current_ept_pages, physical_address >> 12);
+		if (hook)
 		{
-			LOG_ERROR("EPT violation for unmapped GPA: %llx", physical_address);
-			error::unrecoverable_host_error(vcpu);
-			// should never reach here
+			auto pte = hook->pte;
+			if (qualification.execute_access)
+			{
+				pte->read_access = 0;
+				pte->write_access = 0;
+				pte->execute_access = 1;
+				pte->page_frame_number = hook->hook_pfn;
+			}
+			else
+			{
+				pte->read_access = 1;
+				pte->write_access = 1;
+				pte->execute_access = 0;
+				pte->page_frame_number = hook->orig_pfn;
+			}
+
+			vmx::invept(invept_single_context, current_eptp.flags);
+			return;
 		}
 
-		// TODO: Check out sub-page granularity
-
-		auto pte = hook->pte;
 		if (qualification.execute_access)
 		{
-			pte->read_access = 0;
-			pte->write_access = 0;
-			pte->execute_access = 1;
-			pte->page_frame_number = hook->hook_pfn;
-		}
-		else
-		{
-			pte->read_access = 1;
-			pte->write_access = 1;
-			pte->execute_access = 0;
-			pte->page_frame_number = hook->orig_pfn;
+			if (vcpu->in_normal_execution)
+			{
+				// We're transitioning from normal execution to target execution, we need to switch the EPTP to the target EPTP
+				vmx::change_eptp(vcpu->eptp_target_execution);
+				vcpu->in_normal_execution = false;
+				return;
+			}
+			else
+			{
+				// We're transitioning from target execution to normal execution, we need to switch the EPTP to the normal EPTP
+				vmx::change_eptp(vcpu->eptp_normal_execution);
+				vcpu->in_normal_execution = true;
+
+				// log the access
+				auto guest_rip = vmx::vmx_vmread(VMCS_GUEST_RIP);
+				LOG_INFO("Target execution changed to %p", guest_rip);
+				return;
+			}
 		}
 	}
 

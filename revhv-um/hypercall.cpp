@@ -1,5 +1,6 @@
 #include "hypercall.h"
 #include <algorithm>
+#include "utils.hpp"
 
 namespace hv::hypercall
 {
@@ -123,5 +124,44 @@ namespace hv::hypercall
 		}
 
 		return total_written;
+	}
+
+	bool auto_trace_enable(uint64_t target_va, size_t target_size)
+	{
+		auto success = true;
+		utils::for_each_cpu(
+			[&](const uint32_t cpu)
+			{
+				__try
+				{
+					if (!__vmcall(hypercall_number::enable_auto_trace, target_va, target_size))
+					{
+						success = false;
+					}
+				}
+				__except (EXCEPTION_EXECUTE_HANDLER)
+				{
+					success = false;
+				}
+			});
+		return success;
+	}
+
+	bool auto_trace_disable()
+	{
+		bool success = true;
+		utils::for_each_cpu(
+			[&](const uint32_t cpu)
+			{
+				__try
+				{
+					__vmcall(hypercall_number::disable_auto_trace);
+				}
+				__except (EXCEPTION_EXECUTE_HANDLER)
+				{
+					success = false;
+				}
+			});
+		return success;
 	}
 }  // namespace hv::hypercall

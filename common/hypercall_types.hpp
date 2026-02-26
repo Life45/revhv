@@ -26,6 +26,8 @@ namespace hv::hypercall
 		read_vmem,
 		write_vmem,
 		ept_hook,
+		enable_auto_trace,
+		disable_auto_trace,
 		hypercall_max
 	};
 }  // namespace hv::hypercall

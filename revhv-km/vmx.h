@@ -162,6 +162,13 @@ namespace hv::vmx
 		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
 	}
 
+	/// @brief Changes the active EPTP to the new EPTP
+	/// @param new_eptp New EPTP to switch to
+	inline void change_eptp(const ept_pointer& new_eptp)
+	{
+		vmx_vmwrite(VMCS_CTRL_EPT_POINTER, new_eptp.flags);
+	}
+
 	/// @brief Returns a pointer to the current vCPU structure in vmx-root
 	/// @return Pointer to the current vCPU structure
 	inline vcpu::vcpu* current_vcpu()
