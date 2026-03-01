@@ -2,10 +2,15 @@
 #include "includes.h"
 #include "pdb_parser.hpp"
 #include <algorithm>
+#include <functional>
 
-/// @brief Simple PE parser that uses hypercalls for reading memory
+/// @brief PE parser that can read from either live kernel memory (via hypercalls)
+/// or a local memory buffer (e.g. a memory-mapped file from disk).
+///
+/// The read strategy is determined by the read_fn callback supplied at construction.
 class pe
 {
+public:
 	struct section
 	{
 		std::string name;
@@ -14,16 +19,42 @@ class pe
 		uint64_t size;
 	};
 
+	/// @brief Read callback: read `size` bytes from `source` into `dest`.
+	/// Returns true on success. This abstracts hypercall reads vs. direct memcpy.
+	using read_fn = std::function<bool(const void* source, void* dest, size_t size)>;
+
 private:
 	const uint8_t* m_base;
 	size_t m_size;
 	bool m_parsed = false;
 	bool m_valid = false;
+	bool m_owns_mapping = false;  // true when we memory-mapped a file ourselves
+	void* m_mapping_base = nullptr;
+	HANDLE m_mapping_handle = nullptr;
 	std::vector<section> m_sections;
 	std::vector<pdb::symbol_info> m_symbols;
+	read_fn m_read;
 
 public:
-	pe(const uint8_t* base, size_t size) : m_base(base), m_size(size) {}
+	/// @brief Construct a PE parser for live kernel memory (reads via hypercalls).
+	pe(const uint8_t* base, size_t size);
+
+	/// @brief Construct a PE parser backed by a local memory buffer with a custom read function.
+	pe(const uint8_t* base, size_t size, read_fn read);
+
+	/// @brief Open and memory-map a PE file from disk for offline parsing.
+	/// @param file_path  Path to the PE file on disk
+	/// @param image_base Optional virtual base address to use for VA computation (0 = use file offset)
+	/// @return A pe instance backed by the mapped file, or std::nullopt on failure
+	static std::optional<pe> from_file(const std::string& file_path, uint64_t image_base = 0);
+
+	~pe();
+
+	// Move-only (owns file mapping resources)
+	pe(pe&& other) noexcept;
+	pe& operator=(pe&& other) noexcept;
+	pe(const pe&) = delete;
+	pe& operator=(const pe&) = delete;
 
 	/// @brief Parse the PE file and extract section and symbol information.
 	/// @return Success or fail

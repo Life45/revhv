@@ -6,6 +6,7 @@
 #include "exception_wrappers.h"
 #include "error.h"
 #include "hypercall.h"
+#include "trace.h"
 
 namespace hv::vmexit
 {
@@ -332,9 +333,11 @@ namespace hv::vmexit
 				vmx::change_eptp(vcpu->eptp_normal_execution);
 				vcpu->in_normal_execution = true;
 
-				// log the access
+				// Emit binary trace entry
 				auto guest_rip = vmx::vmx_vmread(VMCS_GUEST_RIP);
-				LOG_INFO("Target execution changed to %p", guest_rip);
+				hv::trace::emit(vcpu->trace_buffer, ::trace::fmt_ept_target_transition, static_cast<uint16_t>(vcpu->core_id), guest_rip);
+
+				// TODO: Log more info such as return address, per-function info for common APIs, etc.
 				return;
 			}
 		}

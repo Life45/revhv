@@ -1,4 +1,5 @@
 #include "kmodules.h"
+#include "hypercall.h"
 #include "logger.hpp"
 #include "utils.hpp"
 
@@ -72,14 +73,38 @@ const pe* kmodule_context::ensure_parsed(const kmodule& mod)
 {
 	std::lock_guard lock(m_parse_mutex);
 
-	auto [it, inserted] = m_parsed_modules.try_emplace(mod.name, reinterpret_cast<const uint8_t*>(mod.base), mod.size);
-	if (inserted)
+	if (hv::is_present())
 	{
-		if (!it->second.parse())
-			logger::warn("Failed to parse PE for module {}, addresses will resolve to module name + offset only", mod.name);
+		// Live kernel: read PE from guest memory via hypercalls
+		auto [it, inserted] = m_parsed_modules.try_emplace(mod.name, reinterpret_cast<const uint8_t*>(mod.base), mod.size);
+		if (inserted)
+		{
+			if (!it->second.parse())
+				logger::warn("Failed to parse PE for module {}, addresses will resolve to module name + offset only", mod.name);
+		}
+		return it->second.is_valid() ? &it->second : nullptr;
 	}
 
-	return it->second.is_valid() ? &it->second : nullptr;
+	// No hypervisor: parse PE from disk using the module's full path
+	auto it = m_parsed_modules.find(mod.name);
+	if (it != m_parsed_modules.end())
+		return it->second.is_valid() ? &it->second : nullptr;
+
+	auto disk_pe = pe::from_file(mod.full_path, mod.base);
+	if (!disk_pe)
+	{
+		logger::warn("Failed to open PE from disk for module {} ({})", mod.name, mod.full_path);
+		return nullptr;
+	}
+
+	if (!disk_pe->parse())
+	{
+		logger::warn("Failed to parse PE from disk for module {}", mod.name);
+		return nullptr;
+	}
+
+	auto [ins_it, _] = m_parsed_modules.emplace(mod.name, std::move(*disk_pe));
+	return &ins_it->second;
 }
 
 std::string kmodule_context::resolve_address(uint64_t address)
@@ -295,4 +320,42 @@ std::optional<uint64_t> kmodule_context::resolve_symbol(const std::string& symbo
 	}
 
 	return std::nullopt;
+}
+
+bool kmodule_context::export_modules(const std::string& path)
+{
+	auto modules = snapshot();
+	if (!modules || modules->empty())
+		return false;
+
+	std::ofstream file(path, std::ios::binary | std::ios::trunc);
+	if (!file.is_open())
+		return false;
+
+	module_export::file_header header{};
+	header.magic = module_export::file_magic;
+	header.version = module_export::file_version;
+	header.module_count = static_cast<uint32_t>(modules->size());
+
+	file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+
+	for (const auto& mod : *modules)
+	{
+		module_export::module_entry entry{};
+		entry.base = mod.base;
+		entry.size = mod.size;
+
+		// Copy name (truncate if needed, always null-terminated due to zero-init)
+		const size_t name_len = (std::min)(mod.name.size(), static_cast<size_t>(module_export::max_name_length - 1));
+		std::memcpy(entry.name, mod.name.data(), name_len);
+
+		// Copy full path
+		const size_t path_len = (std::min)(mod.full_path.size(), static_cast<size_t>(module_export::max_path_length - 1));
+		std::memcpy(entry.full_path, mod.full_path.data(), path_len);
+
+		file.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
+	}
+
+	file.flush();
+	return file.good();
 }

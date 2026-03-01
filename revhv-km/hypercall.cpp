@@ -2,6 +2,7 @@
 #include "introspection.h"
 #include "hv.h"
 #include "vmx.h"
+#include "trace.h"
 
 namespace hv::hypercall
 {
@@ -166,6 +167,11 @@ namespace hv::hypercall
 		{
 			LOG_INFO("Successfully enabled auto-trace.");
 
+			// Activate the per-core trace ring buffer
+			vcpu->trace_buffer.write_head = 0;
+			vcpu->trace_buffer.read_tail = 0;
+			vcpu->trace_buffer.active = 1;
+
 			// Start with normal EPTP, the EPT violation handler will switch when target starts executing
 			vmx::change_eptp(vcpu->eptp_normal_execution);
 			vcpu->in_normal_execution = true;
@@ -188,6 +194,9 @@ namespace hv::hypercall
 
 	static void handle_disable_auto_trace(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
+		// Deactivate trace buffer before restoring EPT
+		vcpu->trace_buffer.active = 0;
+
 		ept::restore_auto_trace(vcpu->ept_pages_normal, vcpu->ept_pages_target);
 
 		// Reactivate EPT hooks now that auto-trace permissions are restored
@@ -199,6 +208,62 @@ namespace hv::hypercall
 		vmx::invept(invept_all_context, 0);
 
 		LOG_INFO("Auto-trace disabled, switched back to normal EPTP, hooks reactivated");
+	}
+
+	static void handle_flush_trace_logs(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		// RDX = core_id whose trace buffer to drain
+		// R8  = pointer to guest buffer (array of trace::entry)
+		// R9  = max entries to copy
+		const uint64_t target_core = guest_context->rdx;
+		auto guest_buffer = reinterpret_cast<::trace::entry*>(guest_context->r8);
+		uint64_t max_entries = guest_context->r9;
+
+		// Bounds-check the core id
+		if (target_core >= hv::g_hv.vcpu_count)
+		{
+			guest_context->rax = 0;
+			return;
+		}
+
+		// Clamp to the per-hypercall limit
+		if (max_entries > ::trace::max_flush_entries)
+			max_entries = ::trace::max_flush_entries;
+
+		auto& target_vcpu = hv::g_hv.vcpus[target_core];
+
+		// Reuse the vcpu-local scratch buffer to avoid any stack allocation that would
+		// trigger _chkstk (ntoskrnl is not mapped in VMX-root mode).
+		static_assert(sizeof(vcpu->hypercall_local_buffer) >= sizeof(::trace::entry), "hypercall_local_buffer too small for even one trace entry");
+		constexpr uint64_t batch_capacity = sizeof(vcpu->hypercall_local_buffer) / sizeof(::trace::entry);
+		auto* batch = reinterpret_cast<::trace::entry*>(vcpu->hypercall_local_buffer);
+
+		uint64_t total_flushed = 0;
+
+		while (total_flushed < max_entries)
+		{
+			uint64_t to_drain = max_entries - total_flushed;
+			if (to_drain > batch_capacity)
+				to_drain = batch_capacity;
+
+			uint64_t drained = hv::trace::drain(target_vcpu.trace_buffer, batch, to_drain);
+			if (drained == 0)
+				break;
+
+			// Write the batch to guest memory
+			size_t bytes_to_write = static_cast<size_t>(drained) * sizeof(::trace::entry);
+			auto dest = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(guest_buffer) + total_flushed * sizeof(::trace::entry));
+
+			if (introspection::write_guest_virtual(dest, batch, bytes_to_write) != bytes_to_write)
+			{
+				LOG_ERROR("flush_trace_logs: failed to write %llu entries to guest buffer", drained);
+				break;
+			}
+
+			total_flushed += drained;
+		}
+
+		guest_context->rax = total_flushed;
 	}
 
 	bool handle_hypercall(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
@@ -231,6 +296,9 @@ namespace hv::hypercall
 			break;
 		case hypercall_number::disable_auto_trace:
 			handle_disable_auto_trace(guest_context, vcpu);
+			break;
+		case hypercall_number::flush_trace_logs:
+			handle_flush_trace_logs(guest_context, vcpu);
 			break;
 		default:
 			LOG_WARNING("Received unknown hypercall number: %llu", guest_context->rcx);

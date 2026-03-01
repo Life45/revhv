@@ -5,6 +5,7 @@
 #include "exception.h"
 #include "ept.h"
 #include "../common/hypercall_types.hpp"
+#include "../common/trace_log.hpp"
 
 namespace hv::vcpu
 {
@@ -232,6 +233,9 @@ namespace hv::vcpu
 
 		// queued NMIs to be injected into the guest
 		volatile size_t queued_nmi_count;
+
+		// Per-core binary trace ring buffer (lock-free SPSC, ~512 KB)
+		trace::ring_buffer trace_buffer;
 	};
 
 	bool virtualize(vcpu* vcpu);

@@ -2,6 +2,7 @@
 
 #include "hypercall.h"
 #include "logger.hpp"
+#include "trace_parser.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -149,16 +150,26 @@ namespace commands
 		return true;
 	}
 
+	bool engine::require_hv(const std::string& command_name)
+	{
+		if (hv::is_present())
+			return true;
+		logger::error("'{}' requires the hypervisor, which is not present", command_name);
+		return false;
+	}
+
 	void engine::print_general_help() const
 	{
 		std::cout << "Available commands:\n"
 				  << "  help, ?                Show general help\n"
-				  << "  d/db, dw, dd, dq, dp   Memory dumps (bytes/words/dwords/qwords/pointers)\n"
+				  << "  d/db, dw, dd, dq, dp   Memory dumps (bytes/words/dwords/qwords/pointers) [HV]\n"
 				  << "  ln                      Resolve an address/symbol\n"
 				  << "  lm                      List loaded kernel modules\n"
-				  << "  at                      Configure auto-trace (enable/disable)\n"
+				  << "  at                      Configure auto-trace (enable/disable) [HV]\n"
+				  << "  trace parse             Parse and format trace log files (offline)\n"
 				  << "  q, quit, exit           Exit revhv-um\n"
 				  << "\n"
+				  << "Commands marked [HV] require the hypervisor to be active.\n"
 				  << "Integer parsing: all numeric inputs are treated as hexadecimal.\n"
 				  << "Accepted hex forms: 0x1234, 1234, 1234h, ffff`f800`1234`5678.\n"
 				  << "\n"
@@ -205,11 +216,14 @@ namespace commands
 		if (cmd == "lm")
 		{
 			std::cout << "Usage: lm [filter]\n"
+					  << "       lm export <filename>\n"
 					  << "  Lists loaded kernel modules, optionally filtered by module name or path substring.\n"
+					  << "  'lm export' saves the current module list to a binary file for offline processing.\n"
 					  << "  Note: address output is hexadecimal.\n"
 					  << "Examples:\n"
 					  << "  lm\n"
-					  << "  lm nt\n";
+					  << "  lm nt\n"
+					  << "  lm export modules.bin\n";
 			return;
 		}
 
@@ -230,6 +244,26 @@ namespace commands
 			return;
 		}
 
+		if (cmd == "trace")
+		{
+			std::cout << "Usage:\n"
+					  << "  trace parse <modules.bin> <trace_dir> [output_file]\n"
+					  << "\n"
+					  << "  Parses per-core binary trace logs, resolves symbols from module PEs on disk,\n"
+					  << "  merges all entries ordered by timestamp, and writes a formatted log file.\n"
+					  << "  Blocks the command prompt until processing is complete.\n"
+					  << "\n"
+					  << "  modules.bin : Module list exported by 'lm export' or auto-trace.\n"
+					  << "  trace_dir   : Directory containing trace_core_N.bin files.\n"
+					  << "  output_file : Optional output path (default: <trace_dir>/trace_formatted.log).\n"
+					  << "\n"
+					  << "  Does NOT require the hypervisor.\n"
+					  << "Examples:\n"
+					  << "  trace parse modules.bin ./traces\n"
+					  << "  trace parse modules.bin ./traces combined.log\n";
+			return;
+		}
+
 		if (cmd == "help" || cmd == "?")
 		{
 			print_general_help();
@@ -246,6 +280,9 @@ namespace commands
 			print_help_for(args[0]);
 			return true;
 		}
+
+		if (!require_hv(args[0]))
+			return true;
 
 		if (args.size() < 2)
 		{
@@ -434,6 +471,24 @@ namespace commands
 
 		m_modules.refresh();
 
+		// Handle "lm export <filename>"
+		if (args.size() >= 2 && to_lower(args[1]) == "export")
+		{
+			if (args.size() != 3)
+			{
+				logger::warn("'lm export' expects exactly one argument: <filename>");
+				print_help_for("lm");
+				return true;
+			}
+
+			if (m_modules.export_modules(args[2]))
+				std::cout << std::format("Modules exported to {}\n", args[2]);
+			else
+				logger::error("Failed to export modules to '{}'", args[2]);
+
+			return true;
+		}
+
 		std::string filter;
 		if (args.size() > 1)
 			filter = to_lower(join_tokens(args, 1));
@@ -467,6 +522,9 @@ namespace commands
 			return true;
 		}
 
+		if (!require_hv("at"))
+			return true;
+
 		if (args.size() < 2)
 		{
 			logger::warn("Missing subcommand for 'at' (expected 'enable' or 'disable')");
@@ -483,6 +541,9 @@ namespace commands
 				print_help_for("at");
 				return true;
 			}
+
+			// Stop the trace poller before disabling auto-trace so remaining entries are flushed
+			m_trace_poller.stop();
 
 			if (!hv::hypercall::auto_trace_disable())
 				logger::error("Failed to disable auto-trace");
@@ -534,7 +595,66 @@ namespace commands
 			return true;
 		}
 
-		std::cout << std::format("Auto-trace enabled at 0x{:x} (size: 0x{:x})\n", resolved_address, size);
+		// Start the per-core trace polling thread pool
+		m_trace_poller.start();
+
+		// Auto-export the current module list alongside the trace data
+		m_modules.refresh();
+		const auto modules_path = m_trace_poller.get_output_dir() / "modules.bin";
+		if (m_modules.export_modules(modules_path.string()))
+			std::cout << std::format("Module snapshot saved to {}\n", modules_path.string());
+		else
+			logger::warn("Failed to auto-export module list");
+
+		std::cout << std::format("Auto-trace enabled at 0x{:x} (size: 0x{:x}), trace poller running\n", resolved_address, size);
+		return true;
+	}
+
+	void engine::stop_trace_poller()
+	{
+		m_trace_poller.stop();
+	}
+
+	bool engine::handle_trace_parse(const std::vector<std::string>& args)
+	{
+		if (args.size() >= 2 && to_lower(args[1]) == "help")
+		{
+			print_help_for("trace");
+			return true;
+		}
+
+		if (args.size() < 2 || to_lower(args[1]) != "parse")
+		{
+			logger::warn("Unknown trace subcommand (expected 'trace parse')");
+			print_help_for("trace");
+			return true;
+		}
+
+		if (args.size() < 4 || args.size() > 5)
+		{
+			logger::warn("'trace parse' expects: <modules.bin> <trace_dir> [output_file]");
+			print_help_for("trace");
+			return true;
+		}
+
+		const std::string& modules_path = args[2];
+		const std::string& trace_dir = args[3];
+		std::string output_path;
+		if (args.size() == 5)
+			output_path = args[4];
+		else
+			output_path = (std::filesystem::path(trace_dir) / "trace_formatted.log").string();
+
+		std::cout << "Parsing trace logs (this may take a while for large datasets)...\n" << std::flush;
+
+		trace::parser parser;
+		if (!parser.run(modules_path, trace_dir, output_path))
+		{
+			logger::error("Trace parsing failed");
+			return true;
+		}
+
+		std::cout << std::format("Trace parsing complete: {}\n", output_path);
 		return true;
 	}
 
@@ -583,6 +703,9 @@ namespace commands
 
 			if (cmd == "at")
 				return handle_at(tokens);
+
+			if (cmd == "trace")
+				return handle_trace_parse(tokens);
 
 			m_modules.refresh();
 			const std::string expression = join_tokens(tokens, 0);

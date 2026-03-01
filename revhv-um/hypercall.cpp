@@ -164,4 +164,16 @@ namespace hv::hypercall
 			});
 		return success;
 	}
+
+	uint64_t drain_trace_logs(uint32_t core_id, trace::entry* out, uint64_t max_entries)
+	{
+		__try
+		{
+			return __vmcall(hypercall_number::flush_trace_logs, static_cast<uint64_t>(core_id), reinterpret_cast<uint64_t>(out), max_entries);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return 0;
+		}
+	}
 }  // namespace hv::hypercall

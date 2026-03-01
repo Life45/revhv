@@ -1,6 +1,7 @@
 #pragma once
 #include "includes.h"
 #include "pe.hpp"
+#include "../common/module_export.hpp"
 
 class kmodule_context
 {
@@ -38,4 +39,9 @@ public:
 
 	/// @brief Return a thread-safe snapshot of the full module list.
 	std::shared_ptr<const module_list> get_modules();
+
+	/// @brief Exports the current module list to a binary file.
+	/// @param path Output file path
+	/// @return true on success
+	bool export_modules(const std::string& path);
 };

@@ -2,6 +2,14 @@
 #include "includes.h"
 #include "../common/hypercall_types.hpp"
 #include "../common/logging_types.hpp"
+#include "../common/trace_log.hpp"
+
+namespace hv
+{
+	/// @brief Returns true when the hypervisor was detected on all cores at startup.
+	/// Defined in main.cpp.
+	bool is_present();
+}  // namespace hv
 
 namespace hv::hypercall
 {
@@ -41,4 +49,12 @@ namespace hv::hypercall
 
 	bool auto_trace_enable(uint64_t target_va, size_t target_size);
 	bool auto_trace_disable();
+
+	/// @brief Flushes binary trace entries from a specific core's ring buffer.
+	/// The calling thread must be pinned to the target core for cache locality.
+	/// @param core_id  Logical core whose trace buffer to drain
+	/// @param out      Destination buffer (must hold at least max_entries elements)
+	/// @param max_entries Maximum entries to drain per call
+	/// @return Number of entries actually flushed (0 if empty or on error)
+	uint64_t drain_trace_logs(uint32_t core_id, trace::entry* out, uint64_t max_entries);
 }  // namespace hv::hypercall

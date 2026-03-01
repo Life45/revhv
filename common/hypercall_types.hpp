@@ -28,6 +28,7 @@ namespace hv::hypercall
 		ept_hook,
 		enable_auto_trace,
 		disable_auto_trace,
+		flush_trace_logs,
 		hypercall_max
 	};
 }  // namespace hv::hypercall

@@ -2,6 +2,7 @@
 
 #include "includes.h"
 #include "kmodules.h"
+#include "trace_poller.hpp"
 
 namespace commands
 {
@@ -22,8 +23,12 @@ namespace commands
 		bool execute_line(const std::string& line);
 		void print_general_help() const;
 
+		/// @brief Stops the trace poller (if running). Call before exit.
+		void stop_trace_poller();
+
 	private:
 		kmodule_context& m_modules;
+		trace::poller m_trace_poller;
 
 		void print_help_for(const std::string& command_name) const;
 
@@ -31,6 +36,11 @@ namespace commands
 		bool handle_ln(const std::vector<std::string>& args);
 		bool handle_lm(const std::vector<std::string>& args);
 		bool handle_at(const std::vector<std::string>& args);
+		bool handle_trace_parse(const std::vector<std::string>& args);
+
+		/// @brief Returns true if a command that requires the hypervisor can proceed.
+		/// Prints an error and returns false when the HV is absent.
+		static bool require_hv(const std::string& command_name);
 
 		bool parse_expression(const std::string& token, uint64_t& value) const;
 		static bool parse_u64_token(const std::string& token, uint64_t& value);
