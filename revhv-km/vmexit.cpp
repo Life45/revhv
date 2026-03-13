@@ -14,11 +14,56 @@ namespace hv::vmexit
 	{
 		uint64_t rip = vmx::vmx_vmread(VMCS_GUEST_RIP);
 		size_t instruction_length = vmx::vmx_vmread(VMCS_VMEXIT_INSTRUCTION_LENGTH);
-		if (!vmx::vmx_vmwrite(VMCS_GUEST_RIP, rip + instruction_length))
+		uint64_t new_rip = rip + instruction_length;
+
+		if (rip < (1ull << 32) && new_rip >= (1ull << 32))
+		{
+			vmx_segment_access_rights cs_access_rights;
+			cs_access_rights.flags = static_cast<uint32_t>(vmx::vmx_vmread(VMCS_GUEST_CS_ACCESS_RIGHTS));
+
+			if (!cs_access_rights.long_mode)
+			{
+				// The RIP just wrapped around. This actually shouldn't happen in practice, but we need to clear the upper bits to avoid issues on vmentry.
+				new_rip = new_rip & 0xFFFFFFFF;
+				LOG_WARNING("Guest RIP wrapped around from %llx to %llx", rip, new_rip);
+			}
+		}
+
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_RIP, new_rip))
 		{
 			LOG_ERROR("Failed to advance guest RIP");
 			// TODO: Fail appropriately
 			__halt();
+		}
+
+		// Unblock interrupts due to STI or MOV SS, since we just emulated an instruction
+		vmx_interruptibility_state interruptibility_state = {0};
+		interruptibility_state.flags = vmx::vmx_vmread(VMCS_GUEST_INTERRUPTIBILITY_STATE);
+		if (interruptibility_state.blocking_by_mov_ss || interruptibility_state.blocking_by_sti)
+		{
+			interruptibility_state.blocking_by_mov_ss = 0;
+			interruptibility_state.blocking_by_sti = 0;
+
+			if (!vmx::vmx_vmwrite(VMCS_GUEST_INTERRUPTIBILITY_STATE, interruptibility_state.flags))
+			{
+				LOG_ERROR("Failed to update guest interruptibility state");
+			}
+		}
+
+		rflags guest_rflags = {0};
+		guest_rflags.flags = vmx::vmx_vmread(VMCS_GUEST_RFLAGS);
+
+		vmx_pending_debug_exceptions pending_dbg_exceptions = {0};
+		pending_dbg_exceptions.flags = vmx::vmx_vmread(VMCS_GUEST_PENDING_DEBUG_EXCEPTIONS);
+
+		if (guest_rflags.trap_flag && !pending_dbg_exceptions.bs)
+		{
+			// Inject a pending debug exception for single-stepping
+			pending_dbg_exceptions.bs = 1;
+			if (!vmx::vmx_vmwrite(VMCS_GUEST_PENDING_DEBUG_EXCEPTIONS, pending_dbg_exceptions.flags))
+			{
+				LOG_ERROR("Failed to set pending debug exceptions for single-stepping");
+			}
 		}
 	}
 
