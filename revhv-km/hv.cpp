@@ -43,6 +43,7 @@ namespace hv
 			return false;
 		}
 
+		bool success = true;
 		utils::for_each_cpu(
 			[&](size_t i)
 			{
@@ -50,11 +51,12 @@ namespace hv
 				if (!vcpu::virtualize(&g_hv.vcpus[i]))
 				{
 					LOG_ERROR("Failed to virtualize vCPU %lu", i);
+					success = false;
 					return false;
 				}
 			});
 
-		return true;
+		return success;
 	}
 
 	void stop()

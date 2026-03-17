@@ -21,13 +21,16 @@ EXTERN_C NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regis
 		DriverObject->DriverUnload = DriverUnload;
 	}
 
-	if (!NT_SUCCESS(serial::initialize(serial::SERIAL_COM_1, serial::SERIAL_COM_1_NAME)))
+	if (hv::serial_output_enabled)
 	{
-		LOG_ERROR_DBGPRINT("Failed to initialize serial port %u", serial::SERIAL_COM_1);
-		return STATUS_UNSUCCESSFUL;
-	}
+		if (!NT_SUCCESS(serial::initialize(serial::SERIAL_COM_1, serial::SERIAL_COM_1_NAME)))
+		{
+			LOG_ERROR_DBGPRINT("Failed to initialize serial port %u", serial::SERIAL_COM_1);
+			return STATUS_UNSUCCESSFUL;
+		}
 
-	LOG_INFO_DBGPRINT("Initialized serial port %u", serial::SERIAL_COM_1);
+		LOG_INFO_DBGPRINT("Initialized serial port %u", serial::SERIAL_COM_1);
+	}
 
 	LOG_INFO("Driver initialized, starting the hypervisor...");
 
@@ -37,7 +40,7 @@ EXTERN_C NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Regis
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	LOG_INFO("Hypervisor started successfully");
+	LOG_INFO_DBGPRINT("Hypervisor started successfully");
 
 	hv::hooks::initialize();
 

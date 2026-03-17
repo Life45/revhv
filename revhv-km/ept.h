@@ -4,7 +4,7 @@
 
 namespace hv::ept
 {
-	constexpr int ept_pd_count = 64;		  // Basically 64 GB of memory via 2 MB pages
+	constexpr int ept_pd_count = 512;		  // Basically 512 GB of memory via 2 MB pages
 	constexpr int ept_split_pte_count = 256;  // Number of PTEs used for splitting 2 MB pages into 4 KB pages
 	constexpr int ept_max_hook_count = 32;	  // Maximum number of EPT hooks
 

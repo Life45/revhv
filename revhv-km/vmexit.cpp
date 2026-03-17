@@ -131,8 +131,7 @@ namespace hv::vmexit
 			LOG_ERROR("VM-ENTRY FAILURE VMEXIT: Unknown basic exit reason: %llx", reason.basic_exit_reason);
 		}
 
-		// TODO: Fail appropriately
-		__halt();
+		error::unrecoverable_host_error(vcpu);
 	}
 
 	static void handle_cpuid(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
@@ -386,6 +385,10 @@ namespace hv::vmexit
 				return;
 			}
 		}
+
+		// Should never reach here
+		LOG_ERROR("Unhandled EPT violation. Qualification: %llx, physical address: %llx", qualification.flags, physical_address);
+		error::unrecoverable_host_error(vcpu);
 	}
 
 	void handler(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
@@ -458,8 +461,7 @@ namespace hv::vmexit
 			break;
 		default:
 			LOG_ERROR("Unknown VMEXIT reason: %llx", reason.basic_exit_reason);
-			// TODO: Fail appropriately
-			__halt();
+			error::unrecoverable_host_error(vcpu);
 			break;
 		}
 	}

@@ -97,6 +97,15 @@ namespace hv::ept
 	{
 		utils::memset(&ept_pages, 0, sizeof(ept_pages));
 
+		// Harcoded check for the physical address width just to warn if our maximum can't cover the full addressable memory (some MMIO ranges can exceed it)
+		cpuid_eax_80000008 cpuid = {0};
+		__cpuid(reinterpret_cast<int*>(&cpuid), 0x80000008);
+		const uint8_t physical_address_width = cpuid.eax.number_of_physical_address_bits;
+		if (physical_address_width > 39)
+		{
+			LOG_WARNING("Processor supports physical address width of %i bits, but EPT implementation only supports up to 39 bits (512 GB)", physical_address_width);
+		}
+
 		// Initialize split PT PFNs
 		for (size_t i = 0; i < ept_split_pte_count; i++)
 		{

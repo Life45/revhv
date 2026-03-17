@@ -64,15 +64,15 @@ namespace hv::vcpu
 			return false;
 		}
 
-		LOG_INFO("Launcing vCPU %lu...", vcpu->core_id);
+		LOG_INFO_DBGPRINT("Launching vCPU %lu...", vcpu->core_id);
 
 		if (!vmx::launch_vm())
 		{
-			LOG_ERROR("Failed to launch VM");
+			LOG_INFO_DBGPRINT("Failed to launch vCPU %lu", vcpu->core_id);
 			return false;
 		}
 
-		LOG_INFO("vCPU %lu launched successfully", vcpu->core_id);
+		LOG_INFO_DBGPRINT("vCPU %lu launched successfully", vcpu->core_id);
 
 		return true;
 	}

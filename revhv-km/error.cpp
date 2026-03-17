@@ -55,7 +55,7 @@ namespace hv::error
 		}
 
 		LOG_INFO("All cores have acknowledged the crash. Triggering bugcheck.");
-		KeBugCheckEx(MANUALLY_INITIATED_CRASH, 'rvhv', 0xDEADDEAD, 0, vcpu->core_id);
+		KeBugCheckEx(MANUALLY_INITIATED_CRASH, 'rvhv', 0xDEADDEAD, reinterpret_cast<ULONG_PTR>(hv::g_hv.logger.messages), vcpu->core_id);
 	}
 
 	void __declspec(noreturn) unrecoverable_host_error(vcpu::vcpu* vcpu)

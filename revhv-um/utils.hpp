@@ -27,6 +27,50 @@ namespace utils
 		return result;
 	}
 
+	inline bool enable_debug_privilege()
+	{
+		HANDLE token_handle = nullptr;
+		if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token_handle))
+		{
+			logger::error("OpenProcessToken failed while enabling SeDebugPrivilege (GLE={})", ::GetLastError());
+			return false;
+		}
+
+		LUID debug_luid{};
+		if (!::LookupPrivilegeValueW(nullptr, SE_DEBUG_NAME, &debug_luid))
+		{
+			const DWORD error = ::GetLastError();
+			::CloseHandle(token_handle);
+			logger::error("LookupPrivilegeValueW failed for SeDebugPrivilege (GLE={})", error);
+			return false;
+		}
+
+		TOKEN_PRIVILEGES privileges{};
+		privileges.PrivilegeCount = 1;
+		privileges.Privileges[0].Luid = debug_luid;
+		privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+		::SetLastError(ERROR_SUCCESS);
+		if (!::AdjustTokenPrivileges(token_handle, FALSE, &privileges, 0, nullptr, nullptr))
+		{
+			const DWORD error = ::GetLastError();
+			::CloseHandle(token_handle);
+			logger::error("AdjustTokenPrivileges failed while enabling SeDebugPrivilege (GLE={})", error);
+			return false;
+		}
+
+		const DWORD adjust_error = ::GetLastError();
+		::CloseHandle(token_handle);
+		if (adjust_error != ERROR_SUCCESS)
+		{
+			logger::error("SeDebugPrivilege was not assigned (GLE={})", adjust_error);
+			return false;
+		}
+
+		logger::info("SeDebugPrivilege enabled");
+		return true;
+	}
+
 	inline std::wstring string_to_wstring(const std::string& str)
 	{
 		if (str.empty())

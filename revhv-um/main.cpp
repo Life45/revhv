@@ -61,6 +61,12 @@ int main()
 {
 	logger::info("revhv-um started");
 
+	// Needed since NtQuerySystemInformation with SystemModuleInformation doesn't return base addresses in Win 11 without this
+	if (!utils::enable_debug_privilege())
+	{
+		logger::warn("Continuing without SeDebugPrivilege; operations requiring debug access may fail");
+	}
+
 	bool all_cores_ok = true;
 	utils::for_each_cpu(
 		[&all_cores_ok](size_t i)
