@@ -625,11 +625,13 @@ namespace hv::vmcs
 			LOG_ERROR("Failed to write guest EFER to VMCS");
 			return false;
 		}
+
+		/* SMBASE can only be read in SMM
 		if (!vmx::vmx_vmwrite(VMCS_GUEST_SMBASE, __readmsr(IA32_SMBASE)))
 		{
 			LOG_ERROR("Failed to write guest SMBASE to VMCS");
 			return false;
-		}
+		}*/
 
 		// 26.4.2 Guest Non-Register State
 		if (!vmx::vmx_vmwrite(VMCS_GUEST_ACTIVITY_STATE, vmx_active))
