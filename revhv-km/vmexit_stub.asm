@@ -1,6 +1,18 @@
 .code
 
 ; ------------------------------------------------------------------
+; tsc_data
+; defined at stealth.h
+; ------------------------------------------------------------------
+tsc_data struct
+    $tsc_offset                 qword ?
+    $stored_tsc                 qword ?
+    $vmexit_to_store_overhead   qword ?
+    $instruction_overhead       qword ?
+    $vmentry_overhead           qword ?
+tsc_data ends
+
+; ------------------------------------------------------------------
 ; guest_context
 ; defined at vcpu.h
 ; ensure 16 byte alignment after any change to the structure
@@ -74,9 +86,67 @@ IF (SIZEOF guest_context) MOD 16 NE 0
     .ERR <guest_context size must be 16-byte multiple>
 ENDIF
 
-extern ?handler@vmexit@hv@@YAXPEAUguest_context@vcpu@2@PEAU442@@Z : proc
+extern ?handler@vmexit@hv@@YAPEAXPEAUguest_context@vcpu@2@PEAU442@@Z : proc
 
 vmexit_stub proc
+    ; Fast path for timing benchmarks, identified by CPUID exit reason and RCX = 52564856424E4348 (RVHVBNCH)
+
+    ; Try a fast miss by checking lower 32 bits of RVHVBNCH ('BNCH'), saves cycles of performing a vmread 
+    cmp ecx, 424E4348h 
+    jne normal_path_no_restore
+
+    ; Lower 32 bits match, likely a benchmark VMEXIT
+    push r10
+    push r11
+
+    ; Check if exit reason is CPUID
+    mov r10, 4402h ; VMCS_EXIT_REASON
+    vmread r10, r10
+    cmp r10, 0Ah ; VMX_EXIT_REASON_EXECUTE_CPUID
+    jne normal_path
+
+    ; Check if rcx matches the key
+    mov r10, 52564856424E4348h ; RVHVBNCH
+    cmp rcx, r10
+    jne normal_path
+
+    ; Set RIP to one provided by the guest in r8
+    mov r11, 681Eh ; VMCS_GUEST_RIP
+    vmwrite r11, r8
+
+    ; Restore
+    pop r11
+    pop r10
+
+    ; Measure the VMENTRY time by reading the TSC right before VMRESUME, and let the guest read it right after VMENTRY
+    push rdx
+    lfence
+    rdtsc
+    lfence
+
+    shl rdx, 32
+    or rax, rdx
+    mov r9, rax ; R9 will be the TSC of right before executing VMRESUME
+
+    ; We include a dummy VMWRITE to the TSC offset field here to mimic what's done in the time hiding path
+    ; since the overhead of VMWRITE is not accounted for there (it's done after we read the final TSC)
+    mov rax, 2010h ; VMCS_CTRL_TSC_OFFSET
+    xor rdx,rdx
+    dec rdx ; Just to have some more internal serialization since TSC offset is already 0
+    vmwrite rax, rdx
+
+    pop rdx
+
+    ; Resume guest
+    vmresume
+    int 3
+    
+normal_path:
+    ; Restore
+    pop r11
+    pop r10
+
+normal_path_no_restore:
     ; Allocate space for the guest context on the stack
     sub rsp, SIZEOF guest_context
 
@@ -143,8 +213,11 @@ vmexit_stub proc
 
     ; Shadow stack and call the vmexit handler
     sub rsp, 20h
-    call ?handler@vmexit@hv@@YAXPEAUguest_context@vcpu@2@PEAU442@@Z
+    call ?handler@vmexit@hv@@YAPEAXPEAUguest_context@vcpu@2@PEAU442@@Z
     add rsp, 20h
+
+    ; rax points to tsc_data
+    mov rcx, rax
 
     ; Restore MXCSR register
     ldmxcsr [rsp + guest_context.$mxcsr]
@@ -186,10 +259,10 @@ vmexit_stub proc
     mov cr8, rax
 
     ; Restore GPRs
-    mov rax, [rsp + guest_context.$rax]
-    mov rcx, [rsp + guest_context.$rcx]
-    mov rdx, [rsp + guest_context.$rdx]
-    mov rbx, [rsp + guest_context.$rbx]
+    ; rax is restored later
+    ; rcx is restored later
+    ; rdx is restored later
+    ; rbx is restored later
     mov rbp, [rsp + guest_context.$rbp]
     mov rsi, [rsp + guest_context.$rsi]
     mov rdi, [rsp + guest_context.$rdi]
@@ -202,11 +275,59 @@ vmexit_stub proc
     mov r14, [rsp + guest_context.$r14]
     mov r15, [rsp + guest_context.$r15]
 
+    ; if rcx(tsc_data*) is non zero, we update TSC offset
+    test rcx, rcx
+    jne update_tsc_offset
+
+    ; we can restore rax,rcx,rdx,rbx as TSC offset doesn't need to be updated
+    mov rax, [rsp + guest_context.$rax]
+    mov rcx, [rsp + guest_context.$rcx]
+    mov rdx, [rsp + guest_context.$rdx]
+    mov rbx, [rsp + guest_context.$rbx]
+
     ; Free the guest context on the stack
     add rsp, SIZEOF guest_context
 
     ; Resume VM
     vmresume
+    int 3
+
+update_tsc_offset:
+    mov rbx, [rcx + tsc_data.$stored_tsc] ; Stored TSC
+
+    ; desired_tsc = stored_tsc + instruction_overhead - vmentry_overhead - vmexit_to_store_overhead
+    add rbx, [rcx + tsc_data.$instruction_overhead]
+    sub rbx, [rcx + tsc_data.$vmentry_overhead]
+    sub rbx, [rcx + tsc_data.$vmexit_to_store_overhead]
+
+    ; Get the final TSC
+    lfence
+    rdtsc 
+    lfence
+    shl rdx, 32
+    or rax, rdx
+
+    ; offset -= (curr_tsc - desired_tsc)
+    sub rax, rbx ;
+    mov rbx, [rcx + tsc_data.$tsc_offset] ; Current TSC offset
+    sub rbx, rax ; Subtract the current difference from the TSC offset
+    mov [rcx + tsc_data.$tsc_offset], rbx ; Save the new TSC offset
+
+    mov rax, 2010h ; VMCS_CTRL_TSC_OFFSET
+    vmwrite rax, rbx ; VMWRITE the new TSC offset
+
+    ; Restore GPRs
+    mov rax, [rsp + guest_context.$rax]
+    mov rcx, [rsp + guest_context.$rcx]
+    mov rdx, [rsp + guest_context.$rdx]
+    mov rbx, [rsp + guest_context.$rbx]
+
+    ; Free the guest context on the stack
+    add rsp, SIZEOF guest_context
+
+    ; Resume VM
+    vmresume
+    int 3
 vmexit_stub endp
 
 end

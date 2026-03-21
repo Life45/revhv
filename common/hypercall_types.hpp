@@ -19,6 +19,12 @@ namespace hv::hypercall
 		uint64_t target_cr3;
 	};
 
+	struct apic_info
+	{
+		uint64_t lapic_mmio_phys_base;
+		bool x2apic;
+	};
+
 	enum hypercall_number : uint64_t
 	{
 		ping = 1,
@@ -29,6 +35,8 @@ namespace hv::hypercall
 		enable_auto_trace,
 		disable_auto_trace,
 		flush_trace_logs,
+		get_apic_info,
+		test_host_df,  // Causes host double fault by thrashing the host RSP!
 		hypercall_max
 	};
 }  // namespace hv::hypercall

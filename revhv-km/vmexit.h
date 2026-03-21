@@ -11,5 +11,6 @@ namespace hv::vmexit
 	/// @brief Handles a VMEXIT
 	/// @param guest_context Pointer to the guest context
 	/// @param vcpu Pointer to the vcpu
-	void handler(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu);
+	/// @return Pointer to stealth::tsc_data or nullptr if there's no need to offset TSC on this VMEXIT
+	void* handler(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu);
 }  // namespace hv::vmexit

@@ -139,7 +139,16 @@ namespace hv::vmexit
 		// cpuid_eax_10_ecx_02 is used as a generic struct in this case, independent of the actual CPUID function
 		cpuid_eax_10_ecx_02 cpuid = {0};
 
+		_mm_lfence();
+		auto start = __rdtsc();
+		_mm_lfence();
+
 		__cpuidex(reinterpret_cast<int*>(&cpuid), vcpu->guest_context->eax, vcpu->guest_context->ecx);
+
+		_mm_lfence();
+		auto end = __rdtsc();
+
+		vcpu->stealth_data.tsc_data.instruction_overhead = end - start;
 
 		vcpu->guest_context->eax = cpuid.eax.flags;
 		vcpu->guest_context->ebx = cpuid.ebx.flags;
@@ -167,7 +176,15 @@ namespace hv::vmexit
 		// For that reason, we ignore this MSR and ABSOLUTELY DO NOT read it until my brain works again and thinks of a better fix.
 		constexpr auto HV_X64_MSR_GUEST_IDLE = 0x400000f0;
 
+		_mm_lfence();
+		auto start = __rdtsc();
+		_mm_lfence();
 		uint64_t msr_result = msr == HV_X64_MSR_GUEST_IDLE ? 0 : exception_wrappers::rdmsr_wrapper(msr);
+
+		_mm_lfence();
+		auto end = __rdtsc();
+
+		vcpu->stealth_data.tsc_data.instruction_overhead = end - start;
 
 		// Check if an exception has occurred
 		if (vcpu->exception_info.exception_occurred)
@@ -213,7 +230,15 @@ namespace hv::vmexit
 
 		uint64_t value = (static_cast<uint64_t>(guest_context->edx) << 32) | guest_context->eax;
 
+		_mm_lfence();
+		auto start = __rdtsc();
+		_mm_lfence();
 		exception_wrappers::wrmsr_wrapper(msr, value);
+
+		_mm_lfence();
+		auto end = __rdtsc();
+
+		vcpu->stealth_data.tsc_data.instruction_overhead = end - start;
 
 		// Check if an exception has occurred
 		if (vcpu->exception_info.exception_occurred)
@@ -274,7 +299,16 @@ namespace hv::vmexit
 		uint32_t index = guest_context->ecx;
 		uint64_t value = (static_cast<uint64_t>(guest_context->edx) << 32) | guest_context->eax;
 
+		_mm_lfence();
+		auto start = __rdtsc();
+		_mm_lfence();
+
 		exception_wrappers::xsetbv_wrapper(index, value);
+
+		_mm_lfence();
+		auto end = __rdtsc();
+
+		vcpu->stealth_data.tsc_data.instruction_overhead = end - start;
 
 		// Check if an exception has occurred
 		if (vcpu->exception_info.exception_occurred)
@@ -288,9 +322,10 @@ namespace hv::vmexit
 
 	static void handle_nmi(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
-		LOG_INFO("Guest NMI received on core %i", vcpu->core_id);
 		// If a host crash is in progress, devirtualize and give control back to the host OS
 		error::give_control_on_unrecoverable_error(vcpu);
+
+		LOG_INFO("Guest NMI received on core %i", vcpu->core_id);
 
 		// we should normally check the interruptibility state to see if we can inject the NMI now or need to wait
 		// however for consistency, we'll always enqueue the NMI and let the nmi window handler handle it
@@ -391,9 +426,11 @@ namespace hv::vmexit
 		error::unrecoverable_host_error(vcpu);
 	}
 
-	void handler(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	void* handler(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		vcpu->guest_context = guest_context;
+		stealth::on_vmexit(vcpu->stealth_data);
+		stealth::tsc_data* return_data = nullptr;
 
 		vmx_vmexit_reason reason;
 		reason.flags = vmx::vmx_vmread(VMCS_EXIT_REASON);
@@ -404,25 +441,29 @@ namespace hv::vmexit
 		if (reason.vm_entry_failure)
 		{
 			handle_vm_entry_failure(guest_context, vcpu, reason);
-			return;
+			return nullptr;
 		}
 
 		switch (reason.basic_exit_reason)
 		{
 		case VMX_EXIT_REASON_EXECUTE_CPUID:
 			handle_cpuid(guest_context, vcpu);
+			return_data = &vcpu->stealth_data.tsc_data;	 // Hide the overhead
 			break;
 		case VMX_EXIT_REASON_EXECUTE_INVD:
 			handle_invd(guest_context, vcpu);
 			break;
 		case VMX_EXIT_REASON_EXECUTE_RDMSR:
 			handle_rdmsr(guest_context, vcpu);
+			return_data = &vcpu->stealth_data.tsc_data;	 // Hide the overhead
 			break;
 		case VMX_EXIT_REASON_EXECUTE_WRMSR:
 			handle_wrmsr(guest_context, vcpu);
+			return_data = &vcpu->stealth_data.tsc_data;	 // Hide the overhead
 			break;
 		case VMX_EXIT_REASON_EXECUTE_XSETBV:
 			handle_xsetbv(guest_context, vcpu);
+			return_data = &vcpu->stealth_data.tsc_data;	 // Hide the overhead
 			break;
 		case VMX_EXIT_REASON_EXECUTE_GETSEC:
 			handle_getsec(guest_context, vcpu);
@@ -444,6 +485,14 @@ namespace hv::vmexit
 		case VMX_EXIT_REASON_EPT_VIOLATION:
 			handle_ept_violation(guest_context, vcpu);
 			break;
+		case VMX_EXIT_REASON_VMX_PREEMPTION_TIMER_EXPIRED:
+			// Re-sync TSC
+			vcpu->stealth_data.tsc_data.tsc_offset = 0;
+			vmx::vmx_vmwrite(VMCS_CTRL_TSC_OFFSET, 0);
+			// Disable the preemption timer
+			vmx::disable_preemption_timer(vcpu->tsc_preemption_relation_bit);
+			vcpu->preemption_timer_enabled = false;
+			break;
 		case VMX_EXIT_REASON_EXECUTE_INVEPT:
 		case VMX_EXIT_REASON_EXECUTE_INVVPID:
 		case VMX_EXIT_REASON_EXECUTE_SEAMCALL:
@@ -464,5 +513,20 @@ namespace hv::vmexit
 			error::unrecoverable_host_error(vcpu);
 			break;
 		}
+
+		if (!vcpu->stealth_data.bench_completed)
+			return_data = nullptr;	// Don't do any hiding until the benchmark is completed.
+
+		if (return_data)
+		{
+			// Enable preemption timer if not enabled and the tsc offset
+			if (!vcpu->preemption_timer_enabled)
+			{
+				vmx::enable_preemption_timer(vcpu->tsc_preemption_relation_bit, 10000000);
+				vcpu->preemption_timer_enabled = true;
+			}
+		}
+
+		return reinterpret_cast<void*>(return_data);
 	}
 }  // namespace hv::vmexit

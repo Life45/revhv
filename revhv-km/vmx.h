@@ -162,6 +162,21 @@ namespace hv::vmx
 		vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interrupt_info.flags);
 	}
 
+	/// @brief Enables the VM-exit preemption timer with the specified TSC tick count
+	/// @param relation vcpu.tsc_preemption_relation_bit
+	/// @param tsc_ticks TSC tick count for the preemption timer
+	inline void enable_preemption_timer(uint32_t relation, uint64_t tsc_ticks)
+	{
+		uint32_t preemption_value = max(static_cast<uint32_t>(tsc_ticks >> relation), 1u);
+		vmx_vmwrite(VMCS_GUEST_VMX_PREEMPTION_TIMER_VALUE, preemption_value);
+	}
+
+	/// @brief Soft-disables the VM-exit preemption timer by setting it to the maximum value
+	inline void disable_preemption_timer(uint32_t relation)
+	{
+		vmx_vmwrite(VMCS_GUEST_VMX_PREEMPTION_TIMER_VALUE, MAXULONG);
+	}
+
 	/// @brief Changes the active EPTP to the new EPTP
 	/// @param new_eptp New EPTP to switch to
 	inline void change_eptp(const ept_pointer& new_eptp)

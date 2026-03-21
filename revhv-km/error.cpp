@@ -13,19 +13,16 @@ namespace hv::error
 			return false;
 		}
 
-		LOG_ERROR("Raising host crash from vCPU %lu", vcpu->core_id);
 		vcpu::devirtualize(vcpu);
 
 		// Acknowledge 1 for this core
 		sync::atomic_increment(hv::g_hv.crash_ack_core_count);
 
 		// Send NMI to all other cores to notify them of the crash
-		LOG_INFO("Sending NMIs to all other processors");
 
 		// Check if x2APIC is enabled
 		if (apic::is_x2apic_enabled())
 		{
-			LOG_INFO("Sending NMIs via x2APIC");
 			apic::x2apic_send_nmi_all_others();
 		}
 		else
@@ -38,12 +35,10 @@ namespace hv::error
 
 			if (!lapic_mmio_mapped)
 			{
-				LOG_ERROR("Failed to map LAPIC MMIO space for sending NMIs");
-				// Halt since we cannot notify other cores
-				__halt();
+				// Try to bugcheck anyways, we're hopeless at this point
+				KeBugCheckEx(MANUALLY_INITIATED_CRASH, 'rvhv', 0xDEADDEAD, reinterpret_cast<ULONG_PTR>(hv::g_hv.logger.messages), vcpu->core_id);
 			}
 
-			LOG_INFO("Sending NMIs via xAPIC MMIO");
 			apic::xapic_send_nmi_all_others(lapic_mmio_mapped);
 		}
 
@@ -54,7 +49,6 @@ namespace hv::error
 			_mm_pause();
 		}
 
-		LOG_INFO("All cores have acknowledged the crash. Triggering bugcheck.");
 		KeBugCheckEx(MANUALLY_INITIATED_CRASH, 'rvhv', 0xDEADDEAD, reinterpret_cast<ULONG_PTR>(hv::g_hv.logger.messages), vcpu->core_id);
 	}
 

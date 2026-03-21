@@ -4,6 +4,7 @@
 #include "idt.h"
 #include "exception.h"
 #include "ept.h"
+#include "stealth.h"
 #include "../common/hypercall_types.hpp"
 #include "../common/trace_log.hpp"
 
@@ -217,6 +218,8 @@ namespace hv::vcpu
 
 		uint8_t hypercall_local_buffer[hypercall::MAX_VMEM_CHUNK_SIZE];
 
+		alignas(16) stealth::stealth_data stealth_data;
+
 		bool in_normal_execution;
 		ept_pointer eptp_normal_execution;
 		ept_pointer eptp_target_execution;
@@ -236,6 +239,11 @@ namespace hv::vcpu
 
 		// Per-core binary trace ring buffer (lock-free SPSC, ~512 KB)
 		trace::ring_buffer trace_buffer;
+
+		// A.6 MISCELLANEOUS DATA
+		uint32_t tsc_preemption_relation_bit;
+
+		bool preemption_timer_enabled;
 	};
 
 	bool virtualize(vcpu* vcpu);

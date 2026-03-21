@@ -52,6 +52,8 @@ namespace hv::vcpu
 
 		memory::read_mtrrs(vcpu->mtrr_state);
 
+		stealth::prepare_msr_entries(vcpu->stealth_data);
+
 		if (!vmcs::load_vmcs(vcpu))
 		{
 			LOG_ERROR("Failed to load VMCS region");
@@ -73,6 +75,9 @@ namespace hv::vcpu
 		}
 
 		LOG_INFO_DBGPRINT("vCPU %lu launched successfully", vcpu->core_id);
+
+		// Bench the TSC overhead
+		stealth::bench_tsc_overhead(vcpu->stealth_data);
 
 		return true;
 	}

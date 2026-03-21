@@ -57,4 +57,13 @@ namespace hv::hypercall
 	/// @param max_entries Maximum entries to drain per call
 	/// @return Number of entries actually flushed (0 if empty or on error)
 	uint64_t drain_trace_logs(uint32_t core_id, trace::entry* out, uint64_t max_entries);
+
+	/// @brief Retrieves APIC information needed for sending NMIs from the guest, such as the LAPIC MMIO physical base address and whether x2APIC is enabled.
+	/// @param lapic_mmio_phys_base Reference to store the LAPIC MMIO physical base address
+	/// @param x2apic Reference to store whether x2APIC is enabled
+	/// @return True if the information was successfully retrieved, false otherwise
+	bool retrieve_apic_info(uint64_t& lapic_mmio_phys_base, bool& x2apic);
+
+	/// @brief Intentionally causes a double fault on the host for testing purposes.
+	void test_host_double_fault();
 }  // namespace hv::hypercall

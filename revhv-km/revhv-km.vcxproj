@@ -94,7 +94,11 @@
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <TreatWarningAsError>false</TreatWarningAsError>
       <PreprocessorDefinitions>ZYDIS_STATIC_BUILD;ZYAN_NO_LIBC;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
+    <Link>
+      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DriverSign>
@@ -135,6 +139,7 @@
     <ClCompile Include="memory.cpp" />
     <ClCompile Include="pe.cpp" />
     <ClCompile Include="serial.cpp" />
+    <ClCompile Include="stealth.cpp" />
     <ClCompile Include="vcpu.cpp" />
     <ClCompile Include="vmcs.cpp" />
     <ClCompile Include="vmexit.cpp" />
@@ -160,6 +165,7 @@
     <ClInclude Include="memory.h" />
     <ClInclude Include="pe.h" />
     <ClInclude Include="serial.h" />
+    <ClInclude Include="stealth.h" />
     <ClInclude Include="utils.hpp" />
     <ClInclude Include="vcpu.h" />
     <ClInclude Include="vmcs.h" />
@@ -169,6 +175,7 @@
   <ItemGroup>
     <MASM Include="exception_wrappers.asm" />
     <MASM Include="isr.asm" />
+    <MASM Include="stealth_util.asm" />
     <MASM Include="utils.asm" />
     <MASM Include="vmexit_stub.asm" />
     <MASM Include="vmlaunch_stub.asm" />

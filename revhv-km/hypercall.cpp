@@ -3,6 +3,7 @@
 #include "hv.h"
 #include "vmx.h"
 #include "trace.h"
+#include "apic.h"
 
 namespace hv::hypercall
 {
@@ -266,6 +267,26 @@ namespace hv::hypercall
 		guest_context->rax = total_flushed;
 	}
 
+	static void handle_get_apic_info(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		apic_info info = {0};
+		info.x2apic = apic::is_x2apic_enabled();
+		if (!info.x2apic)
+		{
+			info.lapic_mmio_phys_base = reinterpret_cast<uint64_t>(apic::get_lapic_mmio_phys_base());
+		}
+
+		auto guest_buffer = reinterpret_cast<void*>(guest_context->rdx);
+		if (introspection::write_guest_virtual(guest_buffer, &info, sizeof(info)) != sizeof(info))
+		{
+			LOG_ERROR("Failed to write APIC info back to guest");
+			guest_context->rax = 0;	 // Failure
+			return;
+		}
+
+		guest_context->rax = 1;	 // Success
+	}
+
 	bool handle_hypercall(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		// Rax must be the hypercall key, otherwise it's not a valid hypercall and we should inject #UD
@@ -299,6 +320,15 @@ namespace hv::hypercall
 			break;
 		case hypercall_number::flush_trace_logs:
 			handle_flush_trace_logs(guest_context, vcpu);
+			break;
+		case hypercall_number::get_apic_info:
+			handle_get_apic_info(guest_context, vcpu);
+			break;
+		case hypercall_number::test_host_df:
+			// This hypercall is meant for testing the robustness of the host crash handling mechanism by intentionally causing a double fault on the host.
+			// It does this by thrashing the host RSP
+			LOG_INFO("Received test_host_df hypercall, intentionally causing host double fault...");
+			utils::segment::test_trash_rsp();
 			break;
 		default:
 			LOG_WARNING("Received unknown hypercall number: %llu", guest_context->rcx);

@@ -176,4 +176,35 @@ namespace hv::hypercall
 			return 0;
 		}
 	}
+
+	bool retrieve_apic_info(uint64_t& lapic_mmio_phys_base, bool& x2apic)
+	{
+		apic_info info = {0};
+		__try
+		{
+			if (!__vmcall(hypercall_number::get_apic_info, reinterpret_cast<uint64_t>(&info)))
+			{
+				return false;
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+
+		x2apic = info.x2apic;
+		lapic_mmio_phys_base = info.lapic_mmio_phys_base;
+		return true;
+	}
+
+	void test_host_double_fault()
+	{
+		__try
+		{
+			__vmcall(hypercall_number::test_host_df);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+		}
+	}
 }  // namespace hv::hypercall

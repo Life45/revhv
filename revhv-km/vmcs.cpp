@@ -17,7 +17,7 @@ namespace hv::vmcs
 		desiredPinBasedCtls.external_interrupt_exiting = 0;
 		desiredPinBasedCtls.nmi_exiting = 1;
 		desiredPinBasedCtls.virtual_nmi = 1;
-		desiredPinBasedCtls.activate_vmx_preemption_timer = 0;
+		desiredPinBasedCtls.activate_vmx_preemption_timer = 1;
 		desiredPinBasedCtls.process_posted_interrupts = 0;
 
 		if (!write_control_field(desiredPinBasedCtls.flags, VMCS_CTRL_PIN_BASED_VM_EXECUTION_CONTROLS, IA32_VMX_PINBASED_CTLS, IA32_VMX_TRUE_PINBASED_CTLS))
@@ -96,13 +96,12 @@ namespace hv::vmcs
 		// 26.7.2 VM-Exit Controls for MSRs
 		//
 
-		// TODO: Any other MSRs to save/load ? Such as IA32_APERF, etc.
-		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMEXIT_MSR_STORE_COUNT, 0))
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMEXIT_MSR_STORE_COUNT, vcpu->stealth_data.msr_store_count))
 		{
 			LOG_ERROR("Failed to write VM-exit MSR store count to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMEXIT_MSR_STORE_ADDRESS, 0ull))
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMEXIT_MSR_STORE_ADDRESS, MmGetPhysicalAddress(vcpu->stealth_data.msr_entries).QuadPart))
 		{
 			LOG_ERROR("Failed to write VM-exit MSR store value 0 to VMCS");
 			return false;
@@ -121,7 +120,7 @@ namespace hv::vmcs
 		return true;
 	}
 
-	static bool write_vmentry_controls()
+	static bool write_vmentry_controls(vcpu::vcpu* vcpu)
 	{
 		//
 		// 26.8.1 VM-Entry Controls
@@ -144,12 +143,12 @@ namespace hv::vmcs
 		//
 		// 26.8.2 VM-Entry Controls for MSRs
 		//
-		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMENTRY_MSR_LOAD_COUNT, 0))
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMENTRY_MSR_LOAD_COUNT, vcpu->stealth_data.msr_load_count))
 		{
 			LOG_ERROR("Failed to write VM-entry MSR load count to VMCS");
 			return false;
 		}
-		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMENTRY_MSR_LOAD_ADDRESS, 0ull))
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_VMENTRY_MSR_LOAD_ADDRESS, MmGetPhysicalAddress(vcpu->stealth_data.msr_entries).QuadPart))
 		{
 			LOG_ERROR("Failed to write VM-entry MSR load address to VMCS");
 			return false;
@@ -657,6 +656,23 @@ namespace hv::vmcs
 			LOG_ERROR("Failed to write guest VMCS link pointer to VMCS");
 			return false;
 		}
+
+		ia32_vmx_pinbased_ctls_register pin_based_ctls = {0};
+		pin_based_ctls.flags = vmx::vmx_vmread(VMCS_CTRL_PIN_BASED_VM_EXECUTION_CONTROLS);
+		if (pin_based_ctls.activate_vmx_preemption_timer)
+		{
+			if (!vmx::vmx_vmwrite(VMCS_GUEST_VMX_PREEMPTION_TIMER_VALUE, MAXULONG))
+			{
+				LOG_ERROR("Failed to write guest VMX preemption timer value to VMCS");
+				return false;
+			}
+		}
+		else
+		{
+			LOG_ERROR("VMX preemption timer is not supported but the corresponding control is set");
+			return false;
+		}
+
 		return true;
 	}
 
@@ -924,13 +940,13 @@ namespace hv::vmcs
 			return false;
 		}
 
-		if (!write_vmexit_controls())
+		if (!write_vmexit_controls(vcpu))
 		{
 			LOG_ERROR("Failed to write VM-exit controls to VMCS");
 			return false;
 		}
 
-		if (!write_vmentry_controls())
+		if (!write_vmentry_controls(vcpu))
 		{
 			LOG_ERROR("Failed to write VM-entry controls to VMCS");
 			return false;

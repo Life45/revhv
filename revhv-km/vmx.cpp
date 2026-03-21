@@ -92,6 +92,10 @@ namespace hv::vmx
 			return false;
 		}
 
+		ia32_vmx_misc_register vmxMisc = {0};
+		vmxMisc.flags = __readmsr(IA32_VMX_MISC);
+		vcpu->tsc_preemption_relation_bit = vmxMisc.preemption_timer_tsc_relationship;
+
 		return true;
 	}
 

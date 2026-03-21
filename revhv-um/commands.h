@@ -37,6 +37,8 @@ namespace commands
 		bool handle_lm(const std::vector<std::string>& args);
 		bool handle_at(const std::vector<std::string>& args);
 		bool handle_trace_parse(const std::vector<std::string>& args);
+		bool handle_apic_info(const std::vector<std::string>& args);
+		bool handle_test_df(const std::vector<std::string>& args);
 
 		/// @brief Returns true if a command that requires the hypervisor can proceed.
 		/// Prints an error and returns false when the HV is absent.

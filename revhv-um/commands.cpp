@@ -166,6 +166,8 @@ namespace commands
 				  << "  ln                      Resolve an address/symbol\n"
 				  << "  lm                      List loaded kernel modules\n"
 				  << "  at                      Configure auto-trace (enable/disable) [HV]\n"
+				  << "  apic                    Retrieve APIC info [HV]\n"
+				  << "  df                      Test host double fault [HV]\n"
 				  << "  trace parse             Parse and format trace log files (offline)\n"
 				  << "  q, quit, exit           Exit revhv-um\n"
 				  << "\n"
@@ -261,6 +263,21 @@ namespace commands
 					  << "Examples:\n"
 					  << "  trace parse modules.bin ./traces\n"
 					  << "  trace parse modules.bin ./traces combined.log\n";
+			return;
+		}
+
+		if (cmd == "apic")
+		{
+			std::cout << "Usage: apic\n"
+					  << "  Retrieves and prints APIC information from the hypervisor.\n";
+			return;
+		}
+
+		if (cmd == "df")
+		{
+			std::cout << "Usage: df\n"
+					  << "  Tests a host double fault inside the hypervisor.\n"
+					  << "  WARNING: This will bugcheck/crash the system.\n";
 			return;
 		}
 
@@ -658,6 +675,64 @@ namespace commands
 		return true;
 	}
 
+	bool engine::handle_apic_info(const std::vector<std::string>& args)
+	{
+		if (args.size() >= 2 && to_lower(args[1]) == "help")
+		{
+			print_help_for(args[0]);
+			return true;
+		}
+
+		if (!require_hv(args[0]))
+			return true;
+
+		uint64_t lapic_mmio_phys_base = 0;
+		bool x2apic = false;
+
+		if (hv::hypercall::retrieve_apic_info(lapic_mmio_phys_base, x2apic))
+		{
+			std::cout << "APIC Information:\n" << std::format("  x2APIC enabled             : {}\n", x2apic ? "Yes" : "No") << std::format("  LAPIC MMIO physical base   : 0x{:016x}\n", lapic_mmio_phys_base);
+		}
+		else
+		{
+			logger::error("Failed to retrieve APIC info from the hypervisor.");
+		}
+
+		return true;
+	}
+
+	bool engine::handle_test_df(const std::vector<std::string>& args)
+	{
+		if (args.size() >= 2 && to_lower(args[1]) == "help")
+		{
+			print_help_for(args[0]);
+			return true;
+		}
+
+		if (!require_hv(args[0]))
+			return true;
+
+		std::cout << "WARNING: This command will intentionally cause a host double fault (CRASH the system).\n"
+				  << "Are you sure you want to proceed? (y/N): ";
+
+		std::string response;
+		std::getline(std::cin, response);
+
+		response = to_lower(response);
+		if (response == "y" || response == "yes")
+		{
+			std::cout << "Initiating host double fault...\n";
+			hv::hypercall::test_host_double_fault();
+			std::cout << "If you see this, the system did not crash (unexpected outcome).\n";
+		}
+		else
+		{
+			std::cout << "Aborted.\n";
+		}
+
+		return true;
+	}
+
 	bool engine::execute_line(const std::string& line)
 	{
 		try
@@ -706,6 +781,12 @@ namespace commands
 
 			if (cmd == "trace")
 				return handle_trace_parse(tokens);
+
+			if (cmd == "apic")
+				return handle_apic_info(tokens);
+
+			if (cmd == "df")
+				return handle_test_df(tokens);
 
 			m_modules.refresh();
 			const std::string expression = join_tokens(tokens, 0);
