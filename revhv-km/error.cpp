@@ -15,9 +15,6 @@ namespace hv::error
 
 		vcpu::devirtualize(vcpu);
 
-		// Fix CS and SS: after devirtualize, CS/SS are still the hypervisor's host
-		// selectors from VMCS host state, which are invalid in the restored Windows GDT.
-		// We must switch to valid Windows selectors before calling any Windows kernel code.
 		utils::switch_host_cs(vcpu->restore_context.cs.flags);
 
 		// Acknowledge 1 for this core
