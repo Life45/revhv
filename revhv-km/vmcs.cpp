@@ -69,7 +69,7 @@ namespace hv::vmcs
 		return true;
 	}
 
-	static bool write_vmexit_controls()
+	static bool write_vmexit_controls(vcpu::vcpu* vcpu)
 	{
 		//
 		// 26.7.1 Primary VM-Exit Controls

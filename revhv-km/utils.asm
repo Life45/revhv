@@ -1,5 +1,26 @@
 .code
 
+switch_host_cs proc
+    ; Preserve RFLAGS (don't change IF state)
+    pushfq
+    pop rax
+    
+    ; Build IRETQ frame: SS, RSP, RFLAGS, CS, RIP
+    push 0              ; SS
+    lea r8, [rsp + 8]   ; RSP = entry RSP
+    push r8
+    push rax            ; RFLAGS
+    and rcx, 0FFFFh
+    push rcx            ; CS
+    lea rax, cs_done
+    push rax            ; RIP = cs_done
+    
+    iretq
+    
+cs_done:
+    ret
+switch_host_cs endp
+
 cpu_hang_unblock_nmi proc
     ; RCX contains CS selector
     
@@ -7,7 +28,8 @@ cpu_hang_unblock_nmi proc
     push 0
     
     ; 2. RSP (Use current stack)
-    push rsp
+    lea r8, [rsp + 8]
+    push r8
     
     ; 3. RFLAGS
     pushfq

@@ -13,11 +13,12 @@ namespace hv::vcpu
 			return false;
 		}
 
-		vmx::enable_vmx();
 		// Capture current state for restoration in case of host double fault
 		_sgdt(&vcpu->restore_context.gdtr);
 		__sidt(&vcpu->restore_context.idtr);
 		vcpu->restore_context.cr3 = __readcr3();
+		vcpu->restore_context.cr4.flags = __readcr4();
+		vcpu->restore_context.cr0.flags = __readcr0();
 
 		vcpu->restore_context.cs = utils::segment::read_cs();
 		vcpu->restore_context.ss = utils::segment::read_ss();
@@ -38,6 +39,8 @@ namespace hv::vcpu
 		vcpu->restore_context.sysenter_cs = __readmsr(IA32_SYSENTER_CS);
 		vcpu->restore_context.sysenter_esp = __readmsr(IA32_SYSENTER_ESP);
 		vcpu->restore_context.sysenter_eip = __readmsr(IA32_SYSENTER_EIP);
+
+		vmx::enable_vmx();
 
 		if (!vmx::enter_vmx_operation(vcpu))
 		{
@@ -102,9 +105,31 @@ namespace hv::vcpu
 		__writemsr(IA32_SYSENTER_ESP, vcpu->restore_context.sysenter_esp);
 		__writemsr(IA32_SYSENTER_EIP, vcpu->restore_context.sysenter_eip);
 
-		// Restore GDT and IDT
-		_lgdt(&vcpu->restore_context.gdtr);
+		// Restore IDT
 		__lidt(&vcpu->restore_context.idtr);
+
+		// Use carbon-copy of GDT to restore the TR without generating a fault due to busy bit.
+		size_t gdt_copy_size = (vcpu->restore_context.gdtr.limit + 1) < sizeof(vcpu->restore_context.dummy_gdt) ? (vcpu->restore_context.gdtr.limit + 1) : sizeof(vcpu->restore_context.dummy_gdt);
+		utils::memcpy(vcpu->restore_context.dummy_gdt, reinterpret_cast<void*>(vcpu->restore_context.gdtr.base_address), gdt_copy_size);
+
+		// Clear the busy bit in the copied GDT's TR descriptor
+		uint16_t tr_offset = vcpu->restore_context.tr.index * 8;
+		if (tr_offset + sizeof(segment_descriptor_64) <= gdt_copy_size)
+		{
+			auto tr_desc = reinterpret_cast<segment_descriptor_64*>(&vcpu->restore_context.dummy_gdt[tr_offset]);
+			tr_desc->type = SEGMENT_DESCRIPTOR_TYPE_TSS_AVAILABLE;
+		}
+
+		segment_descriptor_register_64 dummy_gdtr = {static_cast<uint16_t>(gdt_copy_size - 1), reinterpret_cast<uint64_t>(vcpu->restore_context.dummy_gdt)};
+
+		// Load dummy GDT
+		_lgdt(&dummy_gdtr);
+
+		// Safely load TR
+		utils::segment::write_tr(vcpu->restore_context.tr.flags);
+
+		// Restore the real GDT
+		_lgdt(&vcpu->restore_context.gdtr);
 
 		// Restore segments
 		utils::segment::write_ds(vcpu->restore_context.ds.flags);

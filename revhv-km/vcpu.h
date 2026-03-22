@@ -166,6 +166,8 @@ namespace hv::vcpu
 		segment_descriptor_register_64 gdtr;
 		segment_descriptor_register_64 idtr;
 		uint64_t cr3;
+		cr4 cr4;
+		cr0 cr0;
 
 		segment_selector cs;
 		segment_selector ss;
@@ -186,6 +188,8 @@ namespace hv::vcpu
 		uint64_t sysenter_cs;
 		uint64_t sysenter_esp;
 		uint64_t sysenter_eip;
+
+		alignas(16) uint8_t dummy_gdt[0xFFFF];
 	};
 
 	struct vcpu

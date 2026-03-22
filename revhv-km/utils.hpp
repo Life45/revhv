@@ -46,6 +46,10 @@ namespace utils
 	template <typename Func>
 	void for_each_cpu(Func func);
 
+	/// @brief Switches CS to the provided selector and SS to null via IRETQ
+	/// @param cs_selector Code segment selector from restore context
+	extern "C" void switch_host_cs(uint16_t cs_selector);
+
 	/// @brief Unblocks NMIs via IRETQ and busy waits forever with interrupts enabled
 	/// @param cs_selector Code segment selector from restore context
 	extern "C" void _declspec(noreturn) cpu_hang_unblock_nmi(uint16_t cs_selector);
