@@ -71,7 +71,7 @@ namespace hv::vmexit
 	/// @param vcpu VCPU
 	static void inject_host_hw_exception_to_guest(vcpu::vcpu* vcpu)
 	{
-		LOG_INFO("Injecting host hardware exception to guest: vector: %llx, error code: %llx", vcpu->exception_info.exception_vector, vcpu->exception_info.error_code);
+		// LOG_INFO("Injecting host hardware exception to guest: vector: %llx, error code: %llx", vcpu->exception_info.exception_vector, vcpu->exception_info.error_code);
 		if (isr::vector_has_error_code(vcpu->exception_info.exception_vector))
 		{
 			vmx::inject_hw_exception(vcpu->exception_info.exception_vector, vcpu->exception_info.error_code);
@@ -287,8 +287,8 @@ namespace hv::vmexit
 	{
 		// SMX must already be disabled at this point. Reaching here doesn't make sense since #UD is thrown in case CR4.SMXE = 0 instead of a VMEXIT
 		LOG_ERROR("GETSEC executed. This should not happen since SMX must already be disabled.");
-		// Still inject #GP(0)
-		vmx::inject_hw_exception(general_protection, 0);
+		// Still inject #UD
+		vmx::inject_hw_exception(invalid_opcode);
 		return;
 	}
 
@@ -361,6 +361,305 @@ namespace hv::vmexit
 	{
 		// Inject #UD for all VMX instructions
 		vmx::inject_hw_exception(invalid_opcode);
+	}
+
+	static void handle_mov_to_cr(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu, const vmx_exit_qualification_mov_cr qualification)
+	{
+		// This is an easy index into the guest context, but I made it more explicit in case ordering somehow changed later
+		auto get_gpr_value = [guest_context = guest_context](uint64_t reg) -> uint64_t
+		{
+			switch (reg)
+			{
+			case VMX_EXIT_QUALIFICATION_GENREG_RAX:
+				return guest_context->rax;
+			case VMX_EXIT_QUALIFICATION_GENREG_RCX:
+				return guest_context->rcx;
+			case VMX_EXIT_QUALIFICATION_GENREG_RDX:
+				return guest_context->rdx;
+			case VMX_EXIT_QUALIFICATION_GENREG_RBX:
+				return guest_context->rbx;
+			case VMX_EXIT_QUALIFICATION_GENREG_RSP:
+				return vmx::vmx_vmread(VMCS_GUEST_RSP);
+			case VMX_EXIT_QUALIFICATION_GENREG_RBP:
+				return guest_context->rbp;
+			case VMX_EXIT_QUALIFICATION_GENREG_RSI:
+				return guest_context->rsi;
+			case VMX_EXIT_QUALIFICATION_GENREG_RDI:
+				return guest_context->rdi;
+			case VMX_EXIT_QUALIFICATION_GENREG_R8:
+				return guest_context->r8;
+			case VMX_EXIT_QUALIFICATION_GENREG_R9:
+				return guest_context->r9;
+			case VMX_EXIT_QUALIFICATION_GENREG_R10:
+				return guest_context->r10;
+			case VMX_EXIT_QUALIFICATION_GENREG_R11:
+				return guest_context->r11;
+			case VMX_EXIT_QUALIFICATION_GENREG_R12:
+				return guest_context->r12;
+			case VMX_EXIT_QUALIFICATION_GENREG_R13:
+				return guest_context->r13;
+			case VMX_EXIT_QUALIFICATION_GENREG_R14:
+				return guest_context->r14;
+			case VMX_EXIT_QUALIFICATION_GENREG_R15:
+				return guest_context->r15;
+			}
+		};
+
+		auto reg_val = get_gpr_value(qualification.general_purpose_register);
+
+		// 2.5 Control Registers
+		auto curr_effective_cr0 = vmx::get_effective_guest_cr0();
+		auto curr_effective_cr4 = vmx::get_effective_guest_cr4();
+
+		if (qualification.control_register == VMX_EXIT_QUALIFICATION_REGISTER_CR0)
+		{
+			cr0 new_cr0 = {0};
+			new_cr0.flags = reg_val;
+
+			// Attempting to set any reserved bits in CR0[31:0] is ignored
+			new_cr0.reserved1 = new_cr0.reserved2 = new_cr0.reserved3 = 0;
+
+			// In the Pentium 4, Intel Xeon, and P6 family processors, ET is hardcoded to 1
+			new_cr0.extension_type = 1;
+
+			// Attempting to set any reserved bits in CR0[63:32] results in a general-protection exception, #GP(0)
+			if (new_cr0.reserved4 != 0)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// Setting the PG flag when the PE flag is clear causes a general-protection exception (#GP).
+			if (new_cr0.paging_enable && !new_cr0.protection_enable)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// WP cannot be cleared as long as CR4.CET = 1
+			if (!new_cr0.write_protect && curr_effective_cr4.control_flow_enforcement_enable)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// CR0.PG cannot be cleared in 64-bit mode
+			if (!new_cr0.paging_enable)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// #GP(0) when setting the CD flag to 0 when the NW flag is set to 1
+			if (!new_cr0.cache_disable && new_cr0.not_write_through)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			//
+			// Note: Skipped other checks unrelated when in 64-bit mode
+			// & No need to update EPT structures if CR0.CD was set, since if CR0.CD=1, effective memory type is always UC.
+			// (ref: 31.3.7.2 Memory Type Used for Translated Guest-Physical Addresses)
+			//
+
+			// Update the guest's CR0 shadow
+			if (!vmx::vmx_vmwrite(VMCS_CTRL_CR0_READ_SHADOW, new_cr0.flags))
+			{
+				LOG_ERROR("Failed to update guest CR0 read shadow");
+				error::unrecoverable_host_error(vcpu);
+			}
+
+			// Account for A.7 VMX-Fixed Bits in CR0
+			// TODO: Cache these
+			auto cr0Fixed0 = __readmsr(IA32_VMX_CR0_FIXED0);
+			auto cr0Fixed1 = __readmsr(IA32_VMX_CR0_FIXED1);
+
+			new_cr0.flags |= cr0Fixed0;
+			new_cr0.flags &= cr0Fixed1;
+
+			// Update the guest's CR0
+			if (!vmx::vmx_vmwrite(VMCS_GUEST_CR0, new_cr0.flags))
+			{
+				LOG_ERROR("Failed to update guest CR0");
+				error::unrecoverable_host_error(vcpu);
+			}
+
+			advance_guest_rip();
+			return;
+		}
+		else if (qualification.control_register == VMX_EXIT_QUALIFICATION_REGISTER_CR4)
+		{
+			cr4 new_cr4 = {0};
+			new_cr4.flags = reg_val;
+
+			// Attempting to set any reserved bits in CR4 results in a general-protection exception, #GP(0)
+			if (new_cr4.reserved1 != 0 || new_cr4.reserved2 != 0)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// CR4.CET can be set only if CR0.WP is set
+			if (new_cr4.control_flow_enforcement_enable && !curr_effective_cr0.write_protect)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// MOV to CR4 causes a general-protection exception (#GP) if it would change CR4.PCIDE from 0 to 1 when CR3[11:0] ≠ 000H.
+			if (!curr_effective_cr4.pcid_enable && new_cr4.pcid_enable && (vmx::vmx_vmread(VMCS_GUEST_CR3) & 0xFFF) != 0)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// CR4.PAE and CR4.LA57 cannot be modified while either 4-level paging or 5-level paging is in use (#GP(0))
+			//
+			// & PAE must be set before entering IA-32e mode.
+			if (new_cr4.physical_address_extension != curr_effective_cr4.physical_address_extension || new_cr4.linear_addresses_57_bit != curr_effective_cr4.linear_addresses_57_bit)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			// TODO: What are the interactions between VMX and SMX if guest enables it here?
+			// If the CPUID SMX feature flag is clear, attempting to set CR4.SMXE[Bit 14] results in a general protection exception.
+			cpuid_eax_01 cpuid;
+			__cpuid(reinterpret_cast<int*>(&cpuid), 1);
+			if (!cpuid.cpuid_feature_information_ecx.safer_mode_extensions && new_cr4.smx_enable)
+			{
+				vmx::inject_hw_exception(general_protection, 0);
+				return;
+			}
+
+			if (!vmx::vmx_vmwrite(VMCS_CTRL_CR4_READ_SHADOW, new_cr4.flags))
+			{
+				LOG_ERROR("Failed to update guest CR4 read shadow");
+				error::unrecoverable_host_error(vcpu);
+			}
+
+			// Account for A.7 VMX-Fixed Bits in CR4
+			// TODO: Cache these
+			auto cr4Fixed0 = __readmsr(IA32_VMX_CR4_FIXED0);
+			auto cr4Fixed1 = __readmsr(IA32_VMX_CR4_FIXED1);
+
+			new_cr4.flags |= cr4Fixed0;
+			new_cr4.flags &= cr4Fixed1;
+
+			if (!vmx::vmx_vmwrite(VMCS_GUEST_CR4, new_cr4.flags))
+			{
+				LOG_ERROR("Failed to update guest CR4");
+				error::unrecoverable_host_error(vcpu);
+			}
+
+			// TODO: What happens if guest changes CR4.VMXE ?
+
+			advance_guest_rip();
+			return;
+		}
+		else
+		{
+			LOG_ERROR("MOV to CR%u is not handled", qualification.control_register);
+			error::unrecoverable_host_error(vcpu);
+		}
+	}
+
+	static void handle_clts(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu, const vmx_exit_qualification_mov_cr qualification)
+	{
+		// Clear CR0.TS from both the shadow and the actual CR0
+		auto current_cr0_shadow = vmx::vmx_vmread(VMCS_CTRL_CR0_READ_SHADOW);
+		auto current_cr0 = vmx::vmx_vmread(VMCS_GUEST_CR0);
+
+		current_cr0_shadow &= ~CR0_TASK_SWITCHED_FLAG;
+		current_cr0 &= ~CR0_TASK_SWITCHED_FLAG;
+
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_CR0_READ_SHADOW, current_cr0_shadow))
+		{
+			LOG_ERROR("Failed to update guest CR0 read shadow for CLTS");
+			error::unrecoverable_host_error(vcpu);
+		}
+
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_CR0, current_cr0))
+		{
+			LOG_ERROR("Failed to update guest CR0 for CLTS");
+			error::unrecoverable_host_error(vcpu);
+		}
+	}
+
+	static void handle_lmsw(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu, const vmx_exit_qualification_mov_cr qualification)
+	{
+		// Only the low-order 4 bits of the source operand (which contains the PE, MP, EM, and TS flags) are loaded into CR0
+		constexpr uint64_t lmsw_mask = 0xF;
+
+		auto new_bits = static_cast<uint64_t>(qualification.lmsw_source_data) & lmsw_mask;
+
+		auto current_cr0_shadow = vmx::vmx_vmread(VMCS_CTRL_CR0_READ_SHADOW);
+		auto current_cr0 = vmx::vmx_vmread(VMCS_GUEST_CR0);
+
+		// PE (bit 0) can only be set, not cleared by LMSW
+		if (current_cr0_shadow & CR0_PROTECTION_ENABLE_FLAG)
+			new_bits |= CR0_PROTECTION_ENABLE_FLAG;
+
+		auto new_cr0_shadow = (current_cr0_shadow & ~lmsw_mask) | new_bits;
+		auto new_cr0 = (current_cr0 & ~lmsw_mask) | new_bits;
+
+		if (!vmx::vmx_vmwrite(VMCS_CTRL_CR0_READ_SHADOW, new_cr0_shadow))
+		{
+			LOG_ERROR("Failed to update guest CR0 read shadow for LMSW");
+			error::unrecoverable_host_error(vcpu);
+		}
+
+		// Account for A.7 VMX-Fixed Bits in CR0
+		auto cr0Fixed0 = __readmsr(IA32_VMX_CR0_FIXED0);
+		auto cr0Fixed1 = __readmsr(IA32_VMX_CR0_FIXED1);
+
+		new_cr0 |= cr0Fixed0;
+		new_cr0 &= cr0Fixed1;
+
+		if (!vmx::vmx_vmwrite(VMCS_GUEST_CR0, new_cr0))
+		{
+			LOG_ERROR("Failed to update guest CR0 for LMSW");
+			error::unrecoverable_host_error(vcpu);
+		}
+
+		advance_guest_rip();
+	}
+
+	static void handle_cr_access(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		//
+		// 27.1.3 Instructions That Cause VM Exits Conditionally
+		//
+		// MOV from CR3, CR8 and MOV to CR3, MOV to CR8 does not exit for our current implementation (since their respective exit controls are not set)
+		// Others in this category are conditionally exiting, therefore we need to account for those.
+		//
+		// Note: CR3 exiting specifically depends on the CPU architecture. Some processors only support the 1-setting of CR3-load/store exiting.
+		// TODO: Add warning for the CR3 thing on VMCS setup
+		//
+
+		vmx_exit_qualification_mov_cr qualification;
+		qualification.flags = vmx::vmx_vmread(VMCS_EXIT_QUALIFICATION);
+
+		switch (qualification.access_type)
+		{
+		case VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR:
+			handle_mov_to_cr(guest_context, vcpu, qualification);
+			break;
+		case VMX_EXIT_QUALIFICATION_ACCESS_CLTS:
+			handle_clts(guest_context, vcpu, qualification);
+			break;
+		case VMX_EXIT_QUALIFICATION_ACCESS_LMSW:
+			handle_lmsw(guest_context, vcpu, qualification);
+			break;
+		default:  // MOV_FROM.. is left as default as they only exist for CR3 and CR8
+			LOG_ERROR("Unknown control register access exit qualification: %llx", qualification.flags);
+			error::unrecoverable_host_error(vcpu);
+			break;
+		}
+
+		// TODO: Measure or what ?
+		vcpu->stealth_data.tsc_data.instruction_overhead = 100;
 	}
 
 	static void handle_ept_violation(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
@@ -492,6 +791,10 @@ namespace hv::vmexit
 			// Disable the preemption timer
 			vmx::disable_preemption_timer(vcpu->tsc_preemption_relation_bit);
 			vcpu->preemption_timer_enabled = false;
+			break;
+		case VMX_EXIT_REASON_MOV_CR:
+			handle_cr_access(guest_context, vcpu);
+			return_data = &vcpu->stealth_data.tsc_data;	 // Hide the overhead
 			break;
 		case VMX_EXIT_REASON_EXECUTE_INVEPT:
 		case VMX_EXIT_REASON_EXECUTE_INVVPID:

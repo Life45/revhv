@@ -151,6 +151,6 @@ namespace hv::exception
 		}
 
 		auto relative = trap_frame->machine_frame.rip - reinterpret_cast<uint64_t>(&__ImageBase);
-		LOG_INFO("Host exception handler done, returning to %p (relative: %p)", trap_frame->machine_frame.rip, relative);
+		// LOG_INFO("Host exception handler done, returning to %p (relative: %p)", trap_frame->machine_frame.rip, relative);
 	}
 }  // namespace hv::exception

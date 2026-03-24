@@ -195,4 +195,28 @@ namespace hv::vmx
 	{
 		return __vmcall(number, arg1, arg2, arg3, key);
 	}
+
+	/// @brief Gets the effective CR0 of the guest as can be observed with a MOV x, CR0 from guest code
+	inline cr0 get_effective_guest_cr0()
+	{
+		auto mask = vmx_vmread(VMCS_CTRL_CR0_GUEST_HOST_MASK);
+		auto cr0_shadow = vmx_vmread(VMCS_CTRL_CR0_READ_SHADOW);
+		auto cr0_guest = vmx_vmread(VMCS_GUEST_CR0);
+
+		cr0 cr0;
+		cr0.flags = (cr0_shadow & mask) | (cr0_guest & ~mask);
+		return cr0;
+	}
+
+	/// @brief Gets the effective CR4 of the guest as can be observed with a MOV x, CR4 from guest code
+	inline cr4 get_effective_guest_cr4()
+	{
+		auto mask = vmx_vmread(VMCS_CTRL_CR4_GUEST_HOST_MASK);
+		auto cr4_shadow = vmx_vmread(VMCS_CTRL_CR4_READ_SHADOW);
+		auto cr4_guest = vmx_vmread(VMCS_GUEST_CR4);
+
+		cr4 cr4;
+		cr4.flags = (cr4_shadow & mask) | (cr4_guest & ~mask);
+		return cr4;
+	}
 }  // namespace hv::vmx
