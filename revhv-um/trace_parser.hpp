@@ -259,6 +259,10 @@ namespace trace
 			uint64_t entries_written = 0;
 			const auto report_interval = std::max<uint64_t>(1, 500'000);
 
+			uint64_t total_entries = 0;
+			for (const auto& s : streams)
+				total_entries += s.entry_count;
+
 			while (!min_heap.empty())
 			{
 				const auto [ts, si] = min_heap.top();
@@ -276,11 +280,14 @@ namespace trace
 
 				++entries_written;
 				if (entries_written % report_interval == 0)
-					std::cout << std::format("\r  {} entries processed...", entries_written) << std::flush;
+				{
+					const double pct = total_entries > 0 ? (static_cast<double>(entries_written) / static_cast<double>(total_entries)) * 100.0 : 0.0;
+					std::cout << std::format("\r  {}/{} entries processed ({:.1f}%)...", entries_written, total_entries, pct) << std::flush;
+				}
 			}
 
 			out.flush();
-			std::cout << std::format("\r  {} entries written to output.       \n", entries_written);
+			std::cout << std::format("\r  {}/{} entries written to output ({:.1f}%).       \n", entries_written, total_entries, total_entries > 0 ? (static_cast<double>(entries_written) / static_cast<double>(total_entries)) * 100.0 : 0.0);
 			return out.good();
 		}
 
