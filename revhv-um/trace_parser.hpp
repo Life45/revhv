@@ -6,6 +6,7 @@
 #include "utils.hpp"
 #include "../common/trace_log.hpp"
 #include "../common/module_export.hpp"
+#include "../common/trace_cfg_export.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -26,6 +27,7 @@ namespace trace
 		/// Blocks the calling thread until processing is complete.
 		/// @param modules_path  Path to the module list binary file (module_export format).
 		/// @param trace_dir     Directory containing trace_core_N.bin files.
+		///                      A trace_cfg.bin file may optionally live there too.
 		/// @param output_path   Destination for the formatted log file.
 		/// @return true on success
 		bool run(const std::string& modules_path, const std::string& trace_dir, const std::string& output_path)
@@ -38,6 +40,9 @@ namespace trace
 			}
 
 			logger::info("trace parser: loaded {} modules", m_modules.size());
+
+			// Load the optional trace config (trace_cfg.bin).  Missing file is not an error.
+			load_trace_cfg(trace_dir);
 
 			// Discover and memory-map per-core trace files
 			std::vector<core_stream> streams;
@@ -79,6 +84,22 @@ namespace trace
 		std::unordered_set<std::string> m_pe_attempted;	 // modules already tried (including failures)
 		std::mutex m_pe_mutex;
 
+		// Trace config loaded from trace_cfg.bin (optional, default_generic_cfg if absent)
+		ept_transition_cfg m_generic_cfg = default_generic_cfg;
+		std::string m_generic_fmt;
+
+		struct exact_cfg_entry
+		{
+			uint64_t addr;
+			ept_transition_cfg cfg;
+			std::string fmt;
+		};
+		std::vector<exact_cfg_entry> m_exact_cfgs;
+
+		// Index of the generic-config slot that holds guest_rip (-1 if none).
+		// Used to extract the RIP from an entry for exact-config lookup.
+		int m_rip_slot = -1;
+
 		// Memory-mapped trace file stream
 		struct core_stream
 		{
@@ -102,6 +123,97 @@ namespace trace
 			size_t stream_index;
 			bool operator>(const heap_elem& o) const { return timestamp > o.timestamp; }
 		};
+
+		// Load optional trace config from trace_cfg.bin in the given directory.
+		void load_trace_cfg(const std::string& dir)
+		{
+			const std::string path = dir + "/trace_cfg.bin";
+			std::ifstream file(path, std::ios::binary);
+			if (!file.is_open())
+				return;
+
+			trace_cfg_export::file_header hdr{};
+			file.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
+			if (!file || hdr.magic != trace_cfg_export::file_magic || hdr.version != trace_cfg_export::file_version)
+			{
+				logger::warn("trace parser: invalid or unrecognised trace_cfg.bin, using defaults");
+				return;
+			}
+
+			m_generic_cfg = hdr.generic_cfg;
+			m_generic_fmt.assign(hdr.generic_format, strnlen(hdr.generic_format, trace_cfg_export::max_format_length));
+
+			m_exact_cfgs.resize(hdr.exact_entry_count);
+			for (uint32_t i = 0; i < hdr.exact_entry_count; ++i)
+			{
+				trace_cfg_export::exact_entry entry{};
+				file.read(reinterpret_cast<char*>(&entry), sizeof(entry));
+				if (!file)
+					break;
+				m_exact_cfgs[i].addr = entry.addr;
+				m_exact_cfgs[i].cfg = entry.cfg;
+				m_exact_cfgs[i].fmt.assign(entry.format, strnlen(entry.format, trace_cfg_export::max_format_length));
+			}
+
+			// Find which generic slot holds guest_rip so exact-config lookup can extract the RIP.
+			m_rip_slot = -1;
+			for (int i = 0; i < static_cast<int>(max_data_fields); ++i)
+			{
+				if (m_generic_cfg.data_map[i] == ept_transition_data_field::guest_rip)
+				{
+					m_rip_slot = i;
+					break;
+				}
+			}
+
+			logger::info("trace parser: loaded trace config ({} exact entries, rip_slot={})", hdr.exact_entry_count, m_rip_slot);
+		}
+
+		// Returns the short display name for a data field type.
+		static const char* data_field_name(ept_transition_data_field f)
+		{
+			switch (f)
+			{
+			case ept_transition_data_field::guest_rip:
+				return "rip";
+			case ept_transition_data_field::guest_rsp:
+				return "rsp";
+			case ept_transition_data_field::guest_rax:
+				return "rax";
+			case ept_transition_data_field::guest_rbx:
+				return "rbx";
+			case ept_transition_data_field::guest_rcx:
+				return "rcx";
+			case ept_transition_data_field::guest_rdx:
+				return "rdx";
+			case ept_transition_data_field::guest_rsi:
+				return "rsi";
+			case ept_transition_data_field::guest_rdi:
+				return "rdi";
+			case ept_transition_data_field::guest_rbp:
+				return "rbp";
+			case ept_transition_data_field::guest_r8:
+				return "r8";
+			case ept_transition_data_field::guest_r9:
+				return "r9";
+			case ept_transition_data_field::guest_r10:
+				return "r10";
+			case ept_transition_data_field::guest_r11:
+				return "r11";
+			case ept_transition_data_field::guest_r12:
+				return "r12";
+			case ept_transition_data_field::guest_r13:
+				return "r13";
+			case ept_transition_data_field::guest_r14:
+				return "r14";
+			case ept_transition_data_field::guest_r15:
+				return "r15";
+			case ept_transition_data_field::guest_retaddr:
+				return "retaddr";
+			default:
+				return "?";
+			}
+		}
 
 		// Load exported module list
 		bool load_modules(const std::string& path)
@@ -328,18 +440,200 @@ namespace trace
 			return std::format("{:016x}", address);
 		}
 
+		// Parse a field name string to the corresponding enum value.
+		static ept_transition_data_field parse_field_type(const std::string& name)
+		{
+			using F = ept_transition_data_field;
+			if (name == "rip")
+				return F::guest_rip;
+			if (name == "rsp")
+				return F::guest_rsp;
+			if (name == "rax")
+				return F::guest_rax;
+			if (name == "rbx")
+				return F::guest_rbx;
+			if (name == "rcx")
+				return F::guest_rcx;
+			if (name == "rdx")
+				return F::guest_rdx;
+			if (name == "rsi")
+				return F::guest_rsi;
+			if (name == "rdi")
+				return F::guest_rdi;
+			if (name == "rbp")
+				return F::guest_rbp;
+			if (name == "r8")
+				return F::guest_r8;
+			if (name == "r9")
+				return F::guest_r9;
+			if (name == "r10")
+				return F::guest_r10;
+			if (name == "r11")
+				return F::guest_r11;
+			if (name == "r12")
+				return F::guest_r12;
+			if (name == "r13")
+				return F::guest_r13;
+			if (name == "r14")
+				return F::guest_r14;
+			if (name == "r15")
+				return F::guest_r15;
+			if (name == "retaddr")
+				return F::guest_retaddr;
+			return F::none;
+		}
+
+		// Find which data[] slot holds a given field type (-1 if not present).
+		static int find_data_slot(const ept_transition_cfg& cfg, ept_transition_data_field field)
+		{
+			for (int i = 0; i < max_data_fields; ++i)
+				if (cfg.data_map[i] == field)
+					return i;
+			return -1;
+		}
+
+		// Apply a custom format string to a trace entry using the given config.
+		// Placeholders: {field} → symbol-resolved, {field:spec} → std::format spec on raw uint64_t.
+		// Literal braces via {{ and }}.
+		std::string apply_custom_format(const std::string& fmt, const entry& e, const ept_transition_cfg& cfg)
+		{
+			std::string result;
+			result.reserve(fmt.size() * 2);
+
+			size_t pos = 0;
+			while (pos < fmt.size())
+			{
+				if (pos + 1 < fmt.size() && fmt[pos] == '{' && fmt[pos + 1] == '{')
+				{
+					result += '{';
+					pos += 2;
+					continue;
+				}
+				if (pos + 1 < fmt.size() && fmt[pos] == '}' && fmt[pos + 1] == '}')
+				{
+					result += '}';
+					pos += 2;
+					continue;
+				}
+
+				if (fmt[pos] != '{')
+				{
+					result += fmt[pos++];
+					continue;
+				}
+
+				const auto end_brace = fmt.find('}', pos + 1);
+				if (end_brace == std::string::npos)
+				{
+					result += fmt.substr(pos);
+					break;
+				}
+
+				const std::string placeholder = fmt.substr(pos + 1, end_brace - pos - 1);
+				std::string field_name, spec;
+				const auto colon = placeholder.find(':');
+				if (colon != std::string::npos)
+				{
+					field_name = placeholder.substr(0, colon);
+					spec = placeholder.substr(colon + 1);
+				}
+				else
+				{
+					field_name = placeholder;
+				}
+
+				const auto field_type = parse_field_type(field_name);
+				const int slot = find_data_slot(cfg, field_type);
+				const uint64_t val = (slot >= 0) ? e.data[slot] : 0;
+
+				if (spec.empty())
+				{
+					result += resolve_address(val);
+				}
+				else
+				{
+					try
+					{
+						result += std::vformat("{:" + spec + "}", std::make_format_args(val));
+					}
+					catch (...)
+					{
+						result += "?";
+					}
+				}
+
+				pos = end_brace + 1;
+			}
+
+			return result;
+		}
+
 		// Entry formatting
-		void format_entry(const trace::entry& e, std::string& out)
+		void format_entry(const entry& e, std::string& out)
 		{
 			out.clear();
 
-			switch (static_cast<trace::format_id>(e.format_id))
+			switch (static_cast<format_id>(e.format_id))
 			{
-			case trace::fmt_ept_target_transition:
+			case fmt_ept_target_transition:
 			{
-				const uint64_t guest_rip = e.data[0];
-				const std::string sym = resolve_address(guest_rip);
-				std::format_to(std::back_inserter(out), "[{}] -> {}\n", e.core_id, sym);
+				// Resolve the applicable config and format string:
+				// 1. Extract the RIP value from the generic config's guest_rip slot (if any).
+				// 2. Check for an exact-address config matching that RIP.
+				// 3. Fall back to the generic config.
+				const ept_transition_cfg* cfg = &m_generic_cfg;
+				const std::string* custom_fmt = m_generic_fmt.empty() ? nullptr : &m_generic_fmt;
+
+				if (m_rip_slot >= 0 && !m_exact_cfgs.empty())
+				{
+					const uint64_t rip = e.data[m_rip_slot];
+					for (const auto& ex : m_exact_cfgs)
+					{
+						if (ex.addr == rip)
+						{
+							cfg = &ex.cfg;
+							if (!ex.fmt.empty())
+								custom_fmt = &ex.fmt;
+							break;
+						}
+					}
+				}
+
+				std::format_to(std::back_inserter(out), "[core {}] ", e.core_id);
+
+				if (custom_fmt)
+				{
+					out += apply_custom_format(*custom_fmt, e, *cfg);
+				}
+				else
+				{
+					bool any_field = false;
+					for (int i = 0; i < static_cast<int>(max_data_fields); ++i)
+					{
+						const auto field = cfg->data_map[i];
+						if (field == ept_transition_data_field::none)
+							continue;
+
+						any_field = true;
+						const uint64_t val = e.data[i];
+
+						if (field == ept_transition_data_field::guest_rip || field == ept_transition_data_field::guest_retaddr)
+						{
+							std::format_to(std::back_inserter(out), "{}={} ", data_field_name(field), resolve_address(val));
+						}
+						else
+						{
+							std::format_to(std::back_inserter(out), "{}={:016x} ", data_field_name(field), val);
+						}
+					}
+
+					if (!any_field)
+					{
+						std::format_to(std::back_inserter(out), "data=[{:x},{:x},{:x},{:x},{:x},{:x}]", e.data[0], e.data[1], e.data[2], e.data[3], e.data[4], e.data[5]);
+					}
+				}
+
+				out += '\n';
 				break;
 			}
 

@@ -192,6 +192,13 @@ namespace hv::vcpu
 		alignas(16) uint8_t dummy_gdt[0xFFFF];
 	};
 
+	/// @brief One entry in the per-vCPU exact-address transition config hash table.
+	struct ept_transition_exact_entry
+	{
+		uint64_t addr;
+		trace::ept_transition_cfg cfg;
+	};
+
 	struct vcpu
 	{
 		alignas(0x1000) uint8_t host_stack[host_stack_size];
@@ -243,6 +250,15 @@ namespace hv::vcpu
 
 		// Per-core binary trace ring buffer (lock-free SPSC, ~512 KB)
 		trace::ring_buffer trace_buffer;
+
+		// Generic data-field config for EPT target-transition trace entries
+		trace::ept_transition_cfg generic_transition_cfg;
+
+		// Open-addressing hash table of exact-address EPT transition configs
+		ept_transition_exact_entry exact_transition_cfgs[hv::hypercall::max_exact_transition_cfgs];
+
+		// Number of occupied slots in exact_transition_cfgs
+		uint32_t exact_transition_cfg_count;
 
 		// A.6 MISCELLANEOUS DATA
 		uint32_t tsc_preemption_relation_bit;

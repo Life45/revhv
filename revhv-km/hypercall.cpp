@@ -267,6 +267,62 @@ namespace hv::hypercall
 		guest_context->rax = total_flushed;
 	}
 
+	static bool insert_exact_transition_cfg(vcpu::vcpu* vcpu, uint64_t addr, const ::trace::ept_transition_cfg& cfg)
+	{
+		constexpr uint32_t table_size = max_exact_transition_cfgs;
+		const uint32_t initial_slot = static_cast<uint32_t>((addr >> 3) & (table_size - 1));
+
+		for (uint32_t i = 0; i < table_size; ++i)
+		{
+			auto& e = vcpu->exact_transition_cfgs[(initial_slot + i) & (table_size - 1)];
+			if (e.addr == addr)
+			{
+				e.cfg = cfg;
+				return true;
+			}
+			if (e.addr == 0)
+			{
+				e.addr = addr;
+				e.cfg = cfg;
+				++vcpu->exact_transition_cfg_count;
+				return true;
+			}
+		}
+
+		LOG_ERROR("at_config_ept_transition: exact config table full (max %u), could not insert addr %llx", table_size, addr);
+		return false;
+	}
+
+	static void handle_at_config_ept_transition(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		const at_cfg_scope scope = static_cast<at_cfg_scope>(guest_context->rdx);
+		const void* req_ptr = reinterpret_cast<const void*>(guest_context->r8);
+
+		at_config_request req{};
+		if (introspection::read_guest_virtual(req_ptr, &req, sizeof(req)) != sizeof(req))
+		{
+			LOG_ERROR("at_config_ept_transition: failed to read at_config_request from guest");
+			guest_context->rax = 0;
+			return;
+		}
+
+		if (scope == at_cfg_scope::generic)
+		{
+			vcpu->generic_transition_cfg = req.cfg;
+			guest_context->rax = 1;
+			return;
+		}
+
+		if (scope == at_cfg_scope::exact_addr)
+		{
+			guest_context->rax = insert_exact_transition_cfg(vcpu, req.exact_addr, req.cfg) ? 1 : 0;
+			return;
+		}
+
+		LOG_WARNING("at_config_ept_transition: unknown scope %llu", static_cast<uint64_t>(scope));
+		guest_context->rax = 0;
+	}
+
 	static void handle_get_apic_info(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		apic_info info = {0};
@@ -323,6 +379,9 @@ namespace hv::hypercall
 			break;
 		case hypercall_number::get_apic_info:
 			handle_get_apic_info(guest_context, vcpu);
+			break;
+		case hypercall_number::at_config_ept_transition:
+			handle_at_config_ept_transition(guest_context, vcpu);
 			break;
 		case hypercall_number::test_host_df:
 			// This hypercall is meant for testing the robustness of the host crash handling mechanism by intentionally causing a double fault on the host.

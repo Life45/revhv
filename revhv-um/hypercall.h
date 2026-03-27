@@ -50,10 +50,17 @@ namespace hv::hypercall
 	bool auto_trace_enable(uint64_t target_va, size_t target_size);
 	bool auto_trace_disable();
 
+	/// @brief Sends an EPT transition data-field configuration to every vCPU.
+	/// The calling thread is not required to be pinned; the function iterates over all CPUs internally.
+	/// @param scope generic = update the fallback config; exact_addr = install a per-address config.
+	/// @param req Configuration payload (exact_addr field is only used when scope == exact_addr).
+	/// @return true if all cores accepted the hypercall, false if any failed.
+	bool config_ept_transition(at_cfg_scope scope, const at_config_request& req);
+
 	/// @brief Flushes binary trace entries from a specific core's ring buffer.
 	/// The calling thread must be pinned to the target core for cache locality.
-	/// @param core_id  Logical core whose trace buffer to drain
-	/// @param out      Destination buffer (must hold at least max_entries elements)
+	/// @param core_id Logical core whose trace buffer to drain
+	/// @param out Destination buffer (must hold at least max_entries elements)
 	/// @param max_entries Maximum entries to drain per call
 	/// @return Number of entries actually flushed (0 if empty or on error)
 	uint64_t drain_trace_logs(uint32_t core_id, trace::entry* out, uint64_t max_entries);

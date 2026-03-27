@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cctype>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <sstream>
 
@@ -70,20 +71,93 @@ namespace
 			return 1;
 		}
 	}
+
+	trace::ept_transition_data_field parse_data_field_name(const std::string& name)
+	{
+		using F = trace::ept_transition_data_field;
+		if (name == "rip")
+			return F::guest_rip;
+		if (name == "rsp")
+			return F::guest_rsp;
+		if (name == "rax")
+			return F::guest_rax;
+		if (name == "rbx")
+			return F::guest_rbx;
+		if (name == "rcx")
+			return F::guest_rcx;
+		if (name == "rdx")
+			return F::guest_rdx;
+		if (name == "rsi")
+			return F::guest_rsi;
+		if (name == "rdi")
+			return F::guest_rdi;
+		if (name == "rbp")
+			return F::guest_rbp;
+		if (name == "r8")
+			return F::guest_r8;
+		if (name == "r9")
+			return F::guest_r9;
+		if (name == "r10")
+			return F::guest_r10;
+		if (name == "r11")
+			return F::guest_r11;
+		if (name == "r12")
+			return F::guest_r12;
+		if (name == "r13")
+			return F::guest_r13;
+		if (name == "r14")
+			return F::guest_r14;
+		if (name == "r15")
+			return F::guest_r15;
+		if (name == "retaddr")
+			return F::guest_retaddr;
+		return F::none;
+	}
 }  // namespace
 
 namespace commands
 {
 	engine::engine(kmodule_context& modules) : m_modules(modules)
 	{
+		// Push the default generic config to all vCPUs so the hypervisor
+		// captures rip+retaddr out of the box without any explicit user command.
+		if (hv::is_present())
+		{
+			hv::hypercall::at_config_request req{};
+			req.cfg = trace::default_generic_cfg;
+			hv::hypercall::config_ept_transition(hv::hypercall::at_cfg_scope::generic, req);
+		}
 	}
 
 	std::vector<std::string> engine::tokenize(const std::string& line)
 	{
-		std::istringstream stream(line);
 		std::vector<std::string> tokens;
-		for (std::string token; stream >> token;)
-			tokens.push_back(std::move(token));
+		size_t i = 0;
+		while (i < line.size())
+		{
+			while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i])))
+				++i;
+			if (i >= line.size())
+				break;
+
+			if (line[i] == '"')
+			{
+				++i;
+				std::string tok;
+				while (i < line.size() && line[i] != '"')
+					tok += line[i++];
+				if (i < line.size())
+					++i;
+				tokens.push_back(std::move(tok));
+			}
+			else
+			{
+				const size_t start = i;
+				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])))
+					++i;
+				tokens.emplace_back(line.substr(start, i - start));
+			}
+		}
 		return tokens;
 	}
 
@@ -165,7 +239,7 @@ namespace commands
 				  << "  d/db, dw, dd, dq, dp   Memory dumps (bytes/words/dwords/qwords/pointers) [HV]\n"
 				  << "  ln                      Resolve an address/symbol\n"
 				  << "  lm                      List loaded kernel modules\n"
-				  << "  at                      Configure auto-trace (enable/disable) [HV]\n"
+				  << "  at                      Auto-trace: enable/disable/config [HV]\n"
 				  << "  apic                    Retrieve APIC info [HV]\n"
 				  << "  df                      Test host double fault [HV]\n"
 				  << "  trace parse             Parse and format trace log files (offline)\n"
@@ -232,17 +306,49 @@ namespace commands
 		if (cmd == "at")
 		{
 			std::cout << "Usage:\n"
-					  << "  at enable <address|symbol> <size>\n"
+					  << "  at enable <address|symbol> <size> [output_dir]\n"
 					  << "  at disable\n"
+					  << "  at config generic <f0> [f1] [f2] [f3] [f4] [f5]\n"
+					  << "  at config exact <address|symbol> <f0> [f1] [f2] [f3] [f4] [f5]\n"
+					  << "  at config fmt generic \"<format>\"\n"
+					  << "  at config fmt exact <address|symbol> \"<format>\"\n"
+					  << "  at config fmt clear generic\n"
+					  << "  at config fmt clear exact <address|symbol>\n"
+					  << "  at config export <path>\n"
 					  << "\n"
-					  << "  enable: Activates auto-trace for the provided range.\n"
-					  << "  disable: Disables auto-trace.\n"
-					  << "  size   : Hex size of traced range (must be > 0).\n"
-					  << "  Note   : All integer values are hexadecimal.\n"
+					  << "  enable     : Activate auto-trace for the given address range. [HV]\n"
+					  << "  disable    : Stop tracing and flush remaining entries. [HV]\n"
+					  << "  config     : Set which guest values are captured per trace entry. [HV]\n"
+					  << "               generic applies to all transitions with no exact match.\n"
+					  << "               exact installs a per-RIP override.\n"
+					  << "  config fmt : Set a custom display format for the trace parser.\n"
+					  << "               Use {field} for symbol-resolved or {field:x} for hex.\n"
+					  << "               Omit to use the default field=value display.\n"
+					  << "  config fmt clear: Remove a previously set display format.\n"
+					  << "  config export: Save current config to a binary file (no HV required).\n"
+					  << "\n"
+					  << "  size       : Hex size of traced range (must be > 0).\n"
+					  << "  output_dir : Directory for trace_core_N.bin, modules.bin, trace_cfg.bin\n"
+					  << "               (default: current directory).\n"
+					  << "\n"
+					  << "  Available data fields (f0..f5):\n"
+					  << "    rip      Guest RIP at the transition point\n"
+					  << "    retaddr  64-bit value at [guest_rsp] (return address)\n"
+					  << "    rsp rax rbx rcx rdx rsi rdi rbp\n"
+					  << "    r8  r9  r10 r11 r12 r13 r14 r15\n"
+					  << "    none     Slot unused (default)\n"
+					  << "\n"
+					  << "  Note: all integer values are hexadecimal.\n"
 					  << "Examples:\n"
 					  << "  at enable nt!NtCreateFile 20\n"
-					  << "  at enable fffff80312345678 100\n"
-					  << "  at disable\n";
+					  << "  at enable fffff80312345678 100 C:\\traces\n"
+					  << "  at disable\n"
+					  << "  at config generic rip retaddr\n"
+					  << "  at config exact nt!NtOpenFile rip retaddr rcx rdx r8 r9\n"
+					  << "  at config fmt exact nt!ExFreePool \"{retaddr} -> {rip}(pool = {rcx:x})\"\n"
+					  << "  at config fmt generic \"{rip} {retaddr}\"\n"
+					  << "  at config fmt clear exact nt!ExFreePool\n"
+					  << "  at config export trace_cfg.bin\n";
 			return;
 		}
 
@@ -531,6 +637,232 @@ namespace commands
 		return true;
 	}
 
+	bool engine::export_trace_config(const std::filesystem::path& path) const
+	{
+		std::ofstream file(path, std::ios::binary | std::ios::trunc);
+		if (!file.is_open())
+			return false;
+
+		trace_cfg_export::file_header hdr{};
+		hdr.magic = trace_cfg_export::file_magic;
+		hdr.version = trace_cfg_export::file_version;
+		hdr.data_field_count = trace::max_data_fields;
+		hdr.exact_entry_count = static_cast<uint32_t>(m_exact_transition_cfgs.size());
+		hdr._pad = 0;
+		hdr.generic_cfg = m_generic_transition_cfg;
+		std::memset(hdr.generic_format, 0, sizeof(hdr.generic_format));
+		if (!m_generic_transition_fmt.empty())
+		{
+			const size_t len = std::min(m_generic_transition_fmt.size(), trace_cfg_export::max_format_length - 1);
+			std::memcpy(hdr.generic_format, m_generic_transition_fmt.data(), len);
+		}
+
+		file.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+
+		for (const auto& e : m_exact_transition_cfgs)
+		{
+			trace_cfg_export::exact_entry entry{};
+			entry.addr = e.addr;
+			entry.cfg = e.cfg;
+			std::memset(entry.format, 0, sizeof(entry.format));
+			if (!e.fmt.empty())
+			{
+				const size_t len = std::min(e.fmt.size(), trace_cfg_export::max_format_length - 1);
+				std::memcpy(entry.format, e.fmt.data(), len);
+			}
+			file.write(reinterpret_cast<const char*>(&entry), sizeof(entry));
+		}
+
+		return file.good();
+	}
+
+	bool engine::handle_at_config(const std::vector<std::string>& args)
+	{
+		if (args.size() < 3)
+		{
+			print_help_for("at");
+			return true;
+		}
+
+		const std::string scope_str = to_lower(args[2]);
+
+		if (scope_str == "export")
+		{
+			if (args.size() != 4)
+			{
+				logger::warn("'at config export' expects exactly one argument: <path>");
+				print_help_for("at");
+				return true;
+			}
+			const std::filesystem::path path = args[3];
+			if (export_trace_config(path))
+				logger::info("Trace config saved to {}", path.string());
+			else
+				logger::error("Failed to save trace config to '{}'", path.string());
+			return true;
+		}
+
+		if (scope_str == "fmt")
+		{
+			if (args.size() < 4)
+			{
+				print_help_for("at");
+				return true;
+			}
+
+			const std::string fmt_target = to_lower(args[3]);
+
+			if (fmt_target == "clear")
+			{
+				if (args.size() < 5)
+				{
+					logger::warn("'at config fmt clear' expects 'generic' or 'exact <addr>'");
+					return true;
+				}
+				const std::string clear_scope = to_lower(args[4]);
+				if (clear_scope == "generic")
+				{
+					m_generic_transition_fmt.clear();
+					std::cout << "Generic display format cleared\n";
+				}
+				else if (clear_scope == "exact")
+				{
+					if (args.size() < 6)
+					{
+						logger::warn("'at config fmt clear exact' requires an address argument");
+						return true;
+					}
+					uint64_t addr = 0;
+					if (!parse_expression(args[5], addr))
+					{
+						logger::warn("Failed to resolve address expression: '{}'", args[5]);
+						return true;
+					}
+					auto it = std::find_if(m_exact_transition_cfgs.begin(), m_exact_transition_cfgs.end(), [&](const exact_cfg_entry& e) { return e.addr == addr; });
+					if (it != m_exact_transition_cfgs.end())
+					{
+						it->fmt.clear();
+						std::cout << std::format("Display format cleared for 0x{:x}\n", addr);
+					}
+					else
+					{
+						logger::warn("No exact config exists for 0x{:x}", addr);
+					}
+				}
+				else
+				{
+					logger::warn("Unknown clear target '{}' (expected 'generic' or 'exact')", args[4]);
+				}
+				return true;
+			}
+
+			if (fmt_target == "generic")
+			{
+				if (args.size() != 5)
+				{
+					logger::warn("'at config fmt generic' expects exactly one argument: \"<format>\"");
+					return true;
+				}
+				m_generic_transition_fmt = args[4];
+				std::cout << std::format("Generic display format set: {}\n", m_generic_transition_fmt);
+				return true;
+			}
+
+			if (fmt_target == "exact")
+			{
+				if (args.size() != 6)
+				{
+					logger::warn("'at config fmt exact' expects: <address|symbol> \"<format>\"");
+					return true;
+				}
+				uint64_t addr = 0;
+				if (!parse_expression(args[4], addr))
+				{
+					logger::warn("Failed to resolve address expression: '{}'", args[4]);
+					return true;
+				}
+				auto it = std::find_if(m_exact_transition_cfgs.begin(), m_exact_transition_cfgs.end(), [&](const exact_cfg_entry& e) { return e.addr == addr; });
+				if (it != m_exact_transition_cfgs.end())
+				{
+					it->fmt = args[5];
+					std::cout << std::format("Display format set for 0x{:x}: {}\n", addr, it->fmt);
+				}
+				else
+				{
+					logger::warn("No exact config exists for 0x{:x}. Set data fields first with 'at config exact'.", addr);
+				}
+				return true;
+			}
+
+			logger::warn("Unknown fmt target '{}' (expected 'generic', 'exact', or 'clear')", args[3]);
+			return true;
+		}
+
+		if (!require_hv("at config"))
+			return true;
+
+		hv::hypercall::at_cfg_scope scope{};
+		hv::hypercall::at_config_request req{};
+		size_t field_start = 0;
+
+		if (scope_str == "generic")
+		{
+			scope = hv::hypercall::at_cfg_scope::generic;
+			field_start = 3;
+		}
+		else if (scope_str == "exact")
+		{
+			if (args.size() < 4)
+			{
+				logger::warn("'at config exact' requires an address argument");
+				return true;
+			}
+
+			uint64_t addr = 0;
+			if (!parse_expression(args[3], addr))
+			{
+				logger::warn("Failed to resolve address expression: '{}'", args[3]);
+				return true;
+			}
+
+			req.exact_addr = addr;
+			scope = hv::hypercall::at_cfg_scope::exact_addr;
+			field_start = 4;
+		}
+		else
+		{
+			logger::warn("Unknown at config scope '{}' (expected 'generic' or 'exact')", args[2]);
+			return true;
+		}
+
+		// Parse the data-field names into the config map.
+		for (size_t i = 0; i < trace::max_data_fields && (field_start + i) < args.size(); ++i)
+			req.cfg.data_map[i] = parse_data_field_name(to_lower(args[field_start + i]));
+
+		if (!hv::hypercall::config_ept_transition(scope, req))
+		{
+			logger::error("Failed to apply EPT transition config on one or more cores");
+			return true;
+		}
+
+		// Mirror the new config into the local tracking state so it can be exported.
+		if (scope == hv::hypercall::at_cfg_scope::generic)
+		{
+			m_generic_transition_cfg = req.cfg;
+		}
+		else
+		{
+			auto it = std::find_if(m_exact_transition_cfgs.begin(), m_exact_transition_cfgs.end(), [&](const exact_cfg_entry& e) { return e.addr == req.exact_addr; });
+			if (it != m_exact_transition_cfgs.end())
+				it->cfg = req.cfg;
+			else
+				m_exact_transition_cfgs.push_back({req.exact_addr, req.cfg});
+		}
+
+		std::cout << "EPT transition config updated\n";
+		return true;
+	}
+
 	bool engine::handle_at(const std::vector<std::string>& args)
 	{
 		if (args.size() >= 2 && to_lower(args[1]) == "help")
@@ -550,6 +882,9 @@ namespace commands
 		}
 
 		const std::string subcommand = to_lower(args[1]);
+		if (subcommand == "config")
+			return handle_at_config(args);
+
 		if (subcommand == "disable")
 		{
 			if (args.size() != 2)
@@ -577,9 +912,9 @@ namespace commands
 			return true;
 		}
 
-		if (args.size() != 4)
+		if (args.size() < 4 || args.size() > 5)
 		{
-			logger::warn("'at enable' expects exactly two arguments: <address|symbol> <size>");
+			logger::warn("'at enable' expects: <address|symbol> <size> [output_dir]");
 			print_help_for("at");
 			return true;
 		}
@@ -606,24 +941,30 @@ namespace commands
 			return true;
 		}
 
+		std::filesystem::path output_dir = args.size() == 5 ? std::filesystem::path(args[4]) : std::filesystem::path(".");
+
 		if (!hv::hypercall::auto_trace_enable(resolved_address, size))
 		{
 			logger::error("Failed to enable auto-trace at 0x{:x} (size: 0x{:x})", resolved_address, size);
 			return true;
 		}
 
-		// Start the per-core trace polling thread pool
-		m_trace_poller.start();
+		m_trace_poller.start(output_dir);
 
-		// Auto-export the current module list alongside the trace data
 		m_modules.refresh();
 		const auto modules_path = m_trace_poller.get_output_dir() / "modules.bin";
 		if (m_modules.export_modules(modules_path.string()))
-			std::cout << std::format("Module snapshot saved to {}\n", modules_path.string());
+			logger::info("Module snapshot saved to {}", modules_path.string());
 		else
-			logger::warn("Failed to auto-export module list");
+			logger::warn("Failed to save module snapshot");
 
-		std::cout << std::format("Auto-trace enabled at 0x{:x} (size: 0x{:x}), trace poller running\n", resolved_address, size);
+		const auto cfg_path = m_trace_poller.get_output_dir() / "trace_cfg.bin";
+		if (export_trace_config(cfg_path))
+			logger::info("Trace config saved to {}", cfg_path.string());
+		else
+			logger::warn("Failed to save trace config");
+
+		std::cout << std::format("Auto-trace enabled at 0x{:x} (size: 0x{:x}), output: {}\n", resolved_address, size, m_trace_poller.get_output_dir().string());
 		return true;
 	}
 

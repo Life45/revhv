@@ -17,7 +17,10 @@ namespace hv::vmcs
 		desiredPinBasedCtls.external_interrupt_exiting = 0;
 		desiredPinBasedCtls.nmi_exiting = 1;
 		desiredPinBasedCtls.virtual_nmi = 1;
-		desiredPinBasedCtls.activate_vmx_preemption_timer = 1;
+		if (hv::tsc_hiding_enabled)
+		{
+			desiredPinBasedCtls.activate_vmx_preemption_timer = 1;
+		}
 		desiredPinBasedCtls.process_posted_interrupts = 0;
 
 		if (!write_control_field(desiredPinBasedCtls.flags, VMCS_CTRL_PIN_BASED_VM_EXECUTION_CONTROLS, IA32_VMX_PINBASED_CTLS, IA32_VMX_TRUE_PINBASED_CTLS))
@@ -40,7 +43,10 @@ namespace hv::vmcs
 
 		ia32_vmx_procbased_ctls_register desiredProcBasedCtls = {0};
 
-		desiredProcBasedCtls.use_tsc_offsetting = 1;
+		if (hv::tsc_hiding_enabled)
+		{
+			desiredProcBasedCtls.use_tsc_offsetting = 1;
+		}
 		desiredProcBasedCtls.use_msr_bitmaps = 1;
 		desiredProcBasedCtls.activate_secondary_controls = 1;
 
@@ -188,7 +194,7 @@ namespace hv::vmcs
 		//
 		// 26.6.5 Time-Stamp Counter Offset and Multiplier
 		//
-		if (!vmx::vmx_vmwrite(VMCS_CTRL_TSC_OFFSET, 0ull))
+		if (hv::tsc_hiding_enabled && !vmx::vmx_vmwrite(VMCS_CTRL_TSC_OFFSET, 0ull))
 		{
 			LOG_ERROR("Failed to write TSC offset to VMCS");
 			return false;
@@ -657,20 +663,24 @@ namespace hv::vmcs
 			return false;
 		}
 
-		ia32_vmx_pinbased_ctls_register pin_based_ctls = {0};
-		pin_based_ctls.flags = vmx::vmx_vmread(VMCS_CTRL_PIN_BASED_VM_EXECUTION_CONTROLS);
-		if (pin_based_ctls.activate_vmx_preemption_timer)
+		if (hv::tsc_hiding_enabled)
 		{
-			if (!vmx::vmx_vmwrite(VMCS_GUEST_VMX_PREEMPTION_TIMER_VALUE, MAXULONG))
+			ia32_vmx_pinbased_ctls_register pin_based_ctls = {0};
+			pin_based_ctls.flags = vmx::vmx_vmread(VMCS_CTRL_PIN_BASED_VM_EXECUTION_CONTROLS);
+			if (pin_based_ctls.activate_vmx_preemption_timer)
 			{
-				LOG_ERROR("Failed to write guest VMX preemption timer value to VMCS");
+				if (!vmx::vmx_vmwrite(VMCS_GUEST_VMX_PREEMPTION_TIMER_VALUE, MAXULONG))
+				{
+					LOG_ERROR("Failed to write guest VMX preemption timer value to VMCS");
+					return false;
+				}
+			}
+			else
+			{
+				// Can happen in nested virtualization, we bail out since high offset accumulation will cause the OS serious issues
+				LOG_ERROR("VMX preemption timer is not supported but the corresponding control is set");
 				return false;
 			}
-		}
-		else
-		{
-			LOG_ERROR("VMX preemption timer is not supported but the corresponding control is set");
-			return false;
 		}
 
 		return true;

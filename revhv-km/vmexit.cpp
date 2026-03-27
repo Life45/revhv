@@ -6,7 +6,9 @@
 #include "exception_wrappers.h"
 #include "error.h"
 #include "hypercall.h"
+#include "hv.h"
 #include "trace.h"
+#include "introspection.h"
 
 namespace hv::vmexit
 {
@@ -662,6 +664,94 @@ namespace hv::vmexit
 		vcpu->stealth_data.tsc_data.instruction_overhead = 100;
 	}
 
+	/// @brief Looks up the applicable EPT transition config for guest_rip.
+	/// Checks the per-vCPU exact-address hash table first; falls back to the generic config.
+	__forceinline static const ::trace::ept_transition_cfg* lookup_transition_cfg(const vcpu::vcpu* vcpu, uint64_t guest_rip)
+	{
+		if (vcpu->exact_transition_cfg_count > 0)
+		{
+			constexpr uint32_t table_size = hv::hypercall::max_exact_transition_cfgs;
+			const uint32_t initial_slot = static_cast<uint32_t>((guest_rip >> 3) & (table_size - 1));
+
+			for (uint32_t i = 0; i < table_size; ++i)
+			{
+				const auto& e = vcpu->exact_transition_cfgs[(initial_slot + i) & (table_size - 1)];
+				if (e.addr == 0)
+					break;	// No gap possible in a no-delete hash table; search complete.
+				if (e.addr == guest_rip)
+					return &e.cfg;
+			}
+		}
+
+		return &vcpu->generic_transition_cfg;
+	}
+
+	/// @brief Resolves one data-field descriptor to its runtime value.
+	/// guest_retaddr requires a guest memory read and has higher latency than register fields.
+	__forceinline static uint64_t resolve_data_field(::trace::ept_transition_data_field field, uint64_t guest_rip, uint64_t guest_rsp, const vcpu::guest_context* ctx)
+	{
+		using F = ::trace::ept_transition_data_field;
+		switch (field)
+		{
+		case F::none:
+			return 0;
+		case F::guest_rip:
+			return guest_rip;
+		case F::guest_rsp:
+			return guest_rsp;
+		case F::guest_rax:
+			return ctx->rax;
+		case F::guest_rbx:
+			return ctx->rbx;
+		case F::guest_rcx:
+			return ctx->rcx;
+		case F::guest_rdx:
+			return ctx->rdx;
+		case F::guest_rsi:
+			return ctx->rsi;
+		case F::guest_rdi:
+			return ctx->rdi;
+		case F::guest_rbp:
+			return ctx->rbp;
+		case F::guest_r8:
+			return ctx->r8;
+		case F::guest_r9:
+			return ctx->r9;
+		case F::guest_r10:
+			return ctx->r10;
+		case F::guest_r11:
+			return ctx->r11;
+		case F::guest_r12:
+			return ctx->r12;
+		case F::guest_r13:
+			return ctx->r13;
+		case F::guest_r14:
+			return ctx->r14;
+		case F::guest_r15:
+			return ctx->r15;
+		case F::guest_retaddr:
+		{
+			if (!guest_rsp)
+			{
+				return 0;
+			}
+
+			uint64_t retaddr = 0;
+			introspection::read_guest_virtual(reinterpret_cast<const void*>(guest_rsp), &retaddr, sizeof(retaddr));
+			return retaddr;
+		}
+		default:
+			return 0;
+		}
+	}
+
+	/// @brief Resolves all data-field descriptors in cfg into out[0..max_data_fields-1].
+	__forceinline static void resolve_data_fields(const ::trace::ept_transition_cfg* cfg, uint64_t guest_rip, uint64_t guest_rsp, const vcpu::guest_context* ctx, uint64_t* out_data)
+	{
+		for (int i = 0; i < ::trace::max_data_fields; ++i)
+			out_data[i] = resolve_data_field(cfg->data_map[i], guest_rip, guest_rsp, ctx);
+	}
+
 	static void handle_ept_violation(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		const auto& current_eptp = vcpu->in_normal_execution ? vcpu->eptp_normal_execution : vcpu->eptp_target_execution;
@@ -711,11 +801,17 @@ namespace hv::vmexit
 				vmx::change_eptp(vcpu->eptp_normal_execution);
 				vcpu->in_normal_execution = true;
 
-				// Emit binary trace entry
-				auto guest_rip = vmx::vmx_vmread(VMCS_GUEST_RIP);
-				hv::trace::emit(vcpu->trace_buffer, ::trace::fmt_ept_target_transition, static_cast<uint16_t>(vcpu->core_id), guest_rip);
+				// Emit binary trace entry using the configured data-field mapping.
+				// Check exact-address table first; fall back to the generic config.
 
-				// TODO: Log more info such as return address, per-function info for common APIs, etc.
+				const auto guest_rip = vmx::vmx_vmread(VMCS_GUEST_RIP);
+				const auto guest_rsp = vmx::vmx_vmread(VMCS_GUEST_RSP);
+
+				const auto* cfg = lookup_transition_cfg(vcpu, guest_rip);
+				uint64_t resolved_data[::trace::max_data_fields];
+				resolve_data_fields(cfg, guest_rip, guest_rsp, vcpu->guest_context, resolved_data);
+
+				hv::trace::emit(vcpu->trace_buffer, ::trace::fmt_ept_target_transition, static_cast<uint16_t>(vcpu->core_id), resolved_data[0], resolved_data[1], resolved_data[2], resolved_data[3], resolved_data[4], resolved_data[5]);
 				return;
 			}
 		}
@@ -817,8 +913,8 @@ namespace hv::vmexit
 			break;
 		}
 
-		if (!vcpu->stealth_data.bench_completed)
-			return_data = nullptr;	// Don't do any hiding until the benchmark is completed.
+		if (!hv::tsc_hiding_enabled || !vcpu->stealth_data.bench_completed)
+			return_data = nullptr;	// Don't do any hiding until the benchmark is completed or when tsc hiding is disabled.
 
 		if (return_data)
 		{

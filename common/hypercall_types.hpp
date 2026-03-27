@@ -1,4 +1,5 @@
 #pragma once
+#include "trace_log.hpp"
 using uint8_t = unsigned char;
 using uint16_t = unsigned short;
 using uint32_t = unsigned int;
@@ -25,6 +26,24 @@ namespace hv::hypercall
 		bool x2apic;
 	};
 
+	/// Maximum number of per-vCPU exact-address transition configurations (must be a power of 2).
+	constexpr uint32_t max_exact_transition_cfgs = 64;
+
+	/// Scope for the at_config_ept_transition hypercall.
+	enum class at_cfg_scope : uint64_t
+	{
+		generic = 0,	 // Update the fallback config applied when no exact address matches
+		exact_addr = 1,	 // Install or replace a config for a single specific guest RIP
+	};
+
+	/// @brief Payload for the at_config_ept_transition hypercall.
+	/// Passed by pointer in r8; the scope is passed directly in rdx.
+	struct at_config_request
+	{
+		uint64_t exact_addr;			  // Target RIP (only when scope = exact_addr)
+		::trace::ept_transition_cfg cfg;  // Data-field mapping to install
+	};
+
 	enum hypercall_number : uint64_t
 	{
 		ping = 1,
@@ -37,6 +56,7 @@ namespace hv::hypercall
 		flush_trace_logs,
 		get_apic_info,
 		test_host_df,  // Causes host double fault by thrashing the host RSP!
+		at_config_ept_transition,
 		hypercall_max
 	};
 }  // namespace hv::hypercall

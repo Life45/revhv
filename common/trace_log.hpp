@@ -18,6 +18,47 @@ namespace trace
 	/// Maximum number of entries that can be flushed in a single hypercall
 	constexpr uint64_t max_flush_entries = 512;
 
+	/// @brief Identifies which guest value is captured in a specific data slot of a trace entry.
+	/// Used in ept_transition_cfg::data_map to declare what each data[] index holds.
+	enum class ept_transition_data_field : uint8_t
+	{
+		none = 0,
+		guest_rip = 1,	// Guest RIP at the transition point (from VMCS)
+		guest_rsp = 2,	// Guest RSP at the transition point (from VMCS)
+		guest_rax = 3,
+		guest_rbx = 4,
+		guest_rcx = 5,
+		guest_rdx = 6,
+		guest_rsi = 7,
+		guest_rdi = 8,
+		guest_rbp = 9,
+		guest_r8 = 10,
+		guest_r9 = 11,
+		guest_r10 = 12,
+		guest_r11 = 13,
+		guest_r12 = 14,
+		guest_r13 = 15,
+		guest_r14 = 16,
+		guest_r15 = 17,
+		// Below values require memory read(s) from guest and have higher latency impact
+		// 64-bit value read from [guest_rsp] at the transition point.
+		guest_retaddr = 18,
+	};
+
+	/// @brief Per-slot data-field mapping for EPT target-transition trace entries.
+	/// Configures which guest value is captured in each data[] slot at emit time.
+	struct ept_transition_cfg
+	{
+		ept_transition_data_field data_map[max_data_fields] = {};
+	};
+
+	/// @brief Default generic config: captures guest RIP in slot 0 and return address in slot 1.
+	/// Applied automatically on both the hypervisor and trace parser sides when no explicit config is present.
+	inline constexpr ept_transition_cfg default_generic_cfg = {{
+		ept_transition_data_field::guest_rip,
+		ept_transition_data_field::guest_retaddr,
+	}};
+
 	/// @brief Format IDs identifying the type and layout of a trace entry.
 	/// Each ID implies a fixed set of data fields; usermode uses the ID to select the correct format string.
 	enum format_id : uint16_t
@@ -25,7 +66,7 @@ namespace trace
 		fmt_invalid = 0,
 
 		/// Target execution transitioned back to normal execution.
-		/// data[0] = guest RIP at transition point
+		/// data[0..max_data_fields-1] are populated according to the configured ept_transition_cfg
 		fmt_ept_target_transition = 1,
 
 		fmt_max

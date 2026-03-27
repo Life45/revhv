@@ -147,6 +147,27 @@ namespace hv::hypercall
 		return success;
 	}
 
+	bool config_ept_transition(at_cfg_scope scope, const at_config_request& req)
+	{
+		bool success = true;
+		utils::for_each_cpu(
+			[&](const uint32_t)
+			{
+				__try
+				{
+					if (!__vmcall(hypercall_number::at_config_ept_transition, static_cast<uint64_t>(scope), reinterpret_cast<uint64_t>(&req)))
+					{
+						success = false;
+					}
+				}
+				__except (EXCEPTION_EXECUTE_HANDLER)
+				{
+					success = false;
+				}
+			});
+		return success;
+	}
+
 	bool auto_trace_disable()
 	{
 		bool success = true;

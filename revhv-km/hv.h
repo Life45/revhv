@@ -10,6 +10,10 @@ namespace hv
 	/// @brief When enabled, LOG_xxx macros will also output to the serial port.
 	constexpr bool serial_output_enabled = true;
 
+	/// @brief When enabled, the hypervisor tries to hide its timing footprint with TSC offsets and preemption timer.
+	/// 	   Preemption timer is sometimes not exposed in nested virtualization, this option can be disabled to avoid launch failure.
+	constexpr bool tsc_hiding_enabled = true;
+
 	struct hypervisor
 	{
 		memory::host_page_tables host_page_tables;
