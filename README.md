@@ -24,7 +24,7 @@ It is best thought of as a dynamic stepping engine: It breaks in when execution 
 
 This project is aimed at low-level reversing and runtime analysis for reverse-engineers with some prior knowledge. The current implementation is already useful for discovering cross-boundary execution from opaque targets, but the project is still far from complete and under active development.
 
-I already have a write-up ready about an example analysis utilizing this project, as well as explaining the internals and my thought-process a bit more in detail. It just needs some polishing. When it's done, it'll be available on my github profile.
+I already have a write-up ready about an example analysis utilizing this project, as well as explaining the internals and my thought-process a bit more in detail. It just needs some polishing. When it's done, it'll be available on my [GitHub profile](https://github.com/Life45).
 
 ## Building the project
 
@@ -434,4 +434,4 @@ The following is a partial extracted log(some parts removed for readability, for
 
 ## Acknowledgements
 
-Idea of making an Intel hypervisor from scratch was inspired by `https://github.com/jonomango/hv`.
+The idea of making an Intel hypervisor from scratch was inspired by [jonomango/hv](https://github.com/jonomango/hv).
