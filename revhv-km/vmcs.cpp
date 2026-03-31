@@ -233,7 +233,7 @@ namespace hv::vmcs
 		}
 
 		//
-		// 26.6.7 CR3-Target Controls
+		// 26.6.7 CR3-Target Controls (only relevant for older CPUs as newer ones ignore target list if cr3-exiting is disabled)
 		//
 
 		// Do not exit for system CR3
