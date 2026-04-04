@@ -6,6 +6,8 @@ The current tracing model is built around control-flow transitions between a mon
 
 It is best thought of as a dynamic stepping engine: It breaks in when execution is transferred from the target to any other code in the system in any way, logs it, resumes until execution reaches the target again, then repeats.
 
+You can check out my [write-up](https://life45.github.io/blog/dynamic-analysis-with-revhv/) which explains the core logic in more detail, and more importantly contains an actual analysis example using revhv.
+
 ## Design goals
 
 - Keep VMX-root state and execution isolated from the host OS as much as possible.
@@ -23,8 +25,6 @@ It is best thought of as a dynamic stepping engine: It breaks in when execution 
 ## Status and scope
 
 This project is aimed at low-level reversing and runtime analysis for reverse-engineers with some prior knowledge. The current implementation is already useful for discovering cross-boundary execution from opaque targets, but the project is still far from complete and under active development.
-
-I already have a write-up ready about an example analysis utilizing this project, as well as explaining the internals and my thought-process a bit more in detail. It just needs some polishing. When it's done, it'll be available on my [GitHub profile](https://github.com/Life45).
 
 ## Building the project
 
