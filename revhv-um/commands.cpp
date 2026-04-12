@@ -239,7 +239,7 @@ namespace commands
 				  << "  d/db, dw, dd, dq, dp   Memory dumps (bytes/words/dwords/qwords/pointers) [HV]\n"
 				  << "  ln                      Resolve an address/symbol\n"
 				  << "  lm                      List loaded kernel modules\n"
-				  << "  at                      Auto-trace: enable/disable/config [HV]\n"
+				  << "  at                      Auto-trace: enable/disable/onload/config [HV]\n"
 				  << "  apic                    Retrieve APIC info [HV]\n"
 				  << "  df                      Test host double fault [HV]\n"
 				  << "  trace parse             Parse and format trace log files (offline)\n"
@@ -308,6 +308,8 @@ namespace commands
 			std::cout << "Usage:\n"
 					  << "  at enable <address|symbol> <size> [output_dir]\n"
 					  << "  at disable\n"
+					  << "  at onload <driver_name> [output_dir]\n"
+					  << "  at onload clear\n"
 					  << "  at config generic <f0> [f1] [f2] [f3] [f4] [f5]\n"
 					  << "  at config exact <address|symbol> <f0> [f1] [f2] [f3] [f4] [f5]\n"
 					  << "  at config fmt generic \"<format>\"\n"
@@ -318,6 +320,10 @@ namespace commands
 					  << "\n"
 					  << "  enable     : Activate auto-trace for the given address range. [HV]\n"
 					  << "  disable    : Stop tracing and flush remaining entries. [HV]\n"
+					  << "  onload     : Arm auto-trace to fire when <driver_name> is loaded by the system. [HV]\n"
+					  << "               The trace poller is started immediately; tracing begins when the driver loads.\n"
+					  << "               Issuing another 'at onload' overwrites the previous target.\n"
+					  << "  onload clear: Disarm any pending onload target and stop the trace poller. [HV]\n"
 					  << "  config     : Set which guest values are captured per trace entry. [HV]\n"
 					  << "               generic applies to all transitions with no exact match.\n"
 					  << "               exact installs a per-RIP override.\n"
@@ -328,6 +334,7 @@ namespace commands
 					  << "  config export: Save current config to a binary file (no HV required).\n"
 					  << "\n"
 					  << "  size       : Hex size of traced range (must be > 0).\n"
+					  << "  driver_name: Driver basename to watch for, e.g. Dbgv.sys (case-insensitive).\n"
 					  << "  output_dir : Directory for trace_core_N.bin, modules.bin, trace_cfg.bin\n"
 					  << "               (default: current directory).\n"
 					  << "\n"
@@ -343,6 +350,9 @@ namespace commands
 					  << "  at enable nt!NtCreateFile 20\n"
 					  << "  at enable fffff80312345678 100 C:\\traces\n"
 					  << "  at disable\n"
+					  << "  at onload Dbgv.sys\n"
+					  << "  at onload Dbgv.sys C:\\traces\n"
+					  << "  at onload clear\n"
 					  << "  at config generic rip retaddr\n"
 					  << "  at config exact nt!NtOpenFile rip retaddr rcx rdx r8 r9\n"
 					  << "  at config fmt exact nt!ExFreePool \"{retaddr} -> {rip}(pool = {rcx:x})\"\n"
@@ -863,6 +873,136 @@ namespace commands
 		return true;
 	}
 
+	bool engine::handle_at_onload(const std::vector<std::string>& args)
+	{
+		// args[0] = "at", args[1] = "onload", args[2] = driver_name or "clear"
+		if (args.size() < 3)
+		{
+			print_help_for("at");
+			return true;
+		}
+
+		const std::string sub = to_lower(args[2]);
+
+		if (sub == "clear")
+		{
+			if (args.size() != 3)
+			{
+				logger::warn("'at onload clear' does not accept additional arguments");
+				return true;
+			}
+
+			// Stop poller and join snapshot thread before clearing the HV-side target
+			stop_trace_poller();
+
+			if (!hv::hypercall::onload_target_clear())
+				logger::error("Failed to clear onload auto-trace target");
+			else
+				std::cout << "Onload auto-trace target cleared\n";
+
+			return true;
+		}
+
+		// sub is the driver name; validate it
+		if (sub.empty())
+		{
+			logger::warn("Driver name must not be empty");
+			print_help_for("at");
+			return true;
+		}
+
+		if (sub.size() >= hv::hypercall::max_onload_name_length)
+		{
+			logger::warn("Driver name is too long (max {} characters)", hv::hypercall::max_onload_name_length - 1);
+			return true;
+		}
+
+		if (args.size() > 4)
+		{
+			logger::warn("'at onload' expects: <driver_name> [output_dir]");
+			print_help_for("at");
+			return true;
+		}
+
+		const std::filesystem::path output_dir = args.size() == 4 ? std::filesystem::path(args[3]) : std::filesystem::path(".");
+
+		// If a poller or snapshot thread is already running (e.g. from a previous 'at onload'),
+		// tear it all down cleanly before re-arming.
+		if (m_trace_poller.is_running() || m_onload_snapshot_thread.joinable())
+		{
+			logger::info("Stopping existing trace poller before arming new onload target");
+			stop_trace_poller();
+		}
+
+		if (!hv::hypercall::onload_target_set(sub.c_str()))
+		{
+			logger::error("Failed to set onload auto-trace target '{}'", sub);
+			return true;
+		}
+
+		// Build the extension-stripped, lowercased lookup name for the module list
+		std::string lookup_name = sub;
+		const auto dot_pos = lookup_name.rfind('.');
+		if (dot_pos != std::string::npos)
+			lookup_name.erase(dot_pos);
+
+		// Start the poller now so it is ready to drain entries the moment the driver loads.
+		m_trace_poller.start(output_dir);
+
+		const auto cfg_path = m_trace_poller.get_output_dir() / "trace_cfg.bin";
+		if (export_trace_config(cfg_path))
+			logger::info("Trace config saved to {}", cfg_path.string());
+		else
+			logger::warn("Failed to save trace config");
+
+		// Arm the triggered flag and start the async snapshot thread.
+		//
+		// The thread waits until the first non-empty trace batch arrives, which signals that the driver has loaded and tracing has started.
+		// It polls the module list until the target driver appears, then exports modules.bin so the offline parser has the complete list.
+		const std::filesystem::path snapshot_path = m_trace_poller.get_output_dir() / "modules.bin";
+		m_snapshot_triggered.store(false, std::memory_order_relaxed);
+		m_onload_snapshot_thread = std::thread(
+			[this, lookup_name, snapshot_path]()
+			{
+				// Wait for first trace data to arrive
+				// TODO: Use a signal mechanism instead of polling with sleep
+				while (!m_snapshot_triggered.load(std::memory_order_relaxed) && m_trace_poller.is_running())
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+				if (!m_trace_poller.is_running())
+					return;	 // Poller stopped before any trace data – nothing to snapshot
+
+				// Poll until the target driver appears in the loaded module list
+				while (m_trace_poller.is_running())
+				{
+					m_modules.refresh();
+					const auto mods = m_modules.get_modules();
+					for (const auto& mod : *mods)
+					{
+						if (to_lower(mod.name) == lookup_name)
+						{
+							if (m_modules.export_modules(snapshot_path.string()))
+								logger::info("Module snapshot saved to {} (includes target driver)", snapshot_path.string());
+							else
+								logger::warn("Failed to save module snapshot");
+							return;
+						}
+					}
+					std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				}
+
+				logger::warn("Poller stopped before '{}' appeared in the module list; modules.bin not updated", lookup_name);
+			});
+
+		// Register the callback on poller: first non-empty drain signals that the driver has loaded.
+		m_trace_poller.set_on_first_data([this]() { m_snapshot_triggered.store(true, std::memory_order_relaxed); });
+
+		std::cout << std::format("Onload auto-trace armed for '{}', output: {}\n"
+								 "Load the driver and tracing will start automatically.\n",
+								 sub, m_trace_poller.get_output_dir().string());
+		return true;
+	}
+
 	bool engine::handle_at(const std::vector<std::string>& args)
 	{
 		if (args.size() >= 2 && to_lower(args[1]) == "help")
@@ -885,6 +1025,9 @@ namespace commands
 		if (subcommand == "config")
 			return handle_at_config(args);
 
+		if (subcommand == "onload")
+			return handle_at_onload(args);
+
 		if (subcommand == "disable")
 		{
 			if (args.size() != 2)
@@ -894,8 +1037,8 @@ namespace commands
 				return true;
 			}
 
-			// Stop the trace poller before disabling auto-trace so remaining entries are flushed
-			m_trace_poller.stop();
+			// Stop the trace poller (and any pending snapshot thread) before disabling auto-trace
+			stop_trace_poller();
 
 			if (!hv::hypercall::auto_trace_disable())
 				logger::error("Failed to disable auto-trace");
@@ -971,6 +1114,11 @@ namespace commands
 	void engine::stop_trace_poller()
 	{
 		m_trace_poller.stop();
+
+		// Join the onload snapshot thread if it is still running.
+		// It exits naturally once is_running() returns false.
+		if (m_onload_snapshot_thread.joinable())
+			m_onload_snapshot_thread.join();
 	}
 
 	bool engine::handle_trace_parse(const std::vector<std::string>& args)

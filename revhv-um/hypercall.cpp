@@ -228,4 +228,36 @@ namespace hv::hypercall
 		{
 		}
 	}
+
+	bool onload_target_set(const char* driver_name)
+	{
+		if (!driver_name || driver_name[0] == '\0')
+			return false;
+
+		onload_target_request req{};
+		const size_t len = (std::min)(std::strlen(driver_name), max_onload_name_length - 1);
+		std::memcpy(req.driver_name, driver_name, len);
+		req.driver_name[len] = '\0';
+
+		__try
+		{
+			return __vmcall(hypercall_number::set_onload_target, reinterpret_cast<uint64_t>(&req)) != 0;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool onload_target_clear()
+	{
+		__try
+		{
+			return __vmcall(hypercall_number::clear_onload_target) != 0;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
 }  // namespace hv::hypercall

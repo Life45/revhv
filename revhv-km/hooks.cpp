@@ -1,4 +1,6 @@
 #include "hooks.h"
+#include "hv.h"
+#include "pe.h"
 #include "vmx.h"
 #include "hypercall.h"
 #include "Zydis.h"
@@ -9,6 +11,21 @@ namespace hv::hooks
 	{
 		static constexpr size_t absolute_jump_size = 14;
 		static constexpr size_t page_size = 0x1000;
+
+		/// @brief Case-insensitive ASCII comparison for driver basenames.
+		static bool names_match_nocase(const char* a, const char* b)
+		{
+			while (*a && *b)
+			{
+				char ca = (*a >= 'A' && *a <= 'Z') ? static_cast<char>(*a + ('a' - 'A')) : *a;
+				char cb = (*b >= 'A' && *b <= 'Z') ? static_cast<char>(*b + ('a' - 'A')) : *b;
+				if (ca != cb)
+					return false;
+				++a;
+				++b;
+			}
+			return *a == *b;
+		}
 
 		static void write_absolute_jmp(char* target_buffer, size_t target_address)
 		{
@@ -144,6 +161,54 @@ namespace hv::hooks
 
 			LOG_INFO("MmLoadSystemImage: Loading system image: %s, base: %p -> Status %x", image_name, *base, result);
 			RtlFreeAnsiString(&ansi_name);
+
+			// Check if this image matches the pending onload auto-trace target.
+			bool trigger_onload = false;
+			{
+				sync::scoped_spin_lock guard(hv::g_hv.onload_target.lock);
+				if (hv::g_hv.onload_target.active && names_match_nocase(image_name, hv::g_hv.onload_target.name))
+				{
+					// Clear the target so subsequent loads of the same image don't re-trigger.
+					hv::g_hv.onload_target.active = false;
+					trigger_onload = true;
+				}
+			}
+
+			if (trigger_onload)
+			{
+				if (!base || !*base)
+				{
+					LOG_ERROR("onload auto-trace: loaded image base is null for %s", image_name);
+					return result;
+				}
+
+				const size_t image_size = hv::pe::get_image_size(reinterpret_cast<const uint8_t*>(*base));
+				if (image_size == 0)
+				{
+					LOG_ERROR("onload auto-trace: failed to read PE image size for %s, aborting auto-trace", image_name);
+					return result;
+				}
+
+				bool at_success = true;
+				utils::for_each_cpu(
+					[&](size_t i)
+					{
+						if (!vmx::vmx_vmcall(hypercall::enable_auto_trace, reinterpret_cast<uint64_t>(*base), static_cast<uint64_t>(image_size)))
+						{
+							LOG_ERROR("onload auto-trace: failed to enable on vCPU %llu for %s", static_cast<uint64_t>(i), image_name);
+							at_success = false;
+						}
+					});
+
+				if (at_success)
+				{
+					LOG_INFO("onload auto-trace: enabled for %s (base: %p, size: 0x%llx)", image_name, *base, static_cast<uint64_t>(image_size));
+				}
+				else
+				{
+					LOG_ERROR("onload auto-trace: partially failed for %s", image_name);
+				}
+			}
 
 			return result;
 		}

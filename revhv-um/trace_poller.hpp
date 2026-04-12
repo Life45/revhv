@@ -30,6 +30,15 @@ namespace trace
 
 		/// @brief Starts one polling thread per logical core.
 		/// @param output_dir Directory where per-core binary files are written.
+		/// @brief Registers a one-shot callback that fires the first time any worker drains a
+		/// non-empty batch of trace entries. The callback is invoked from a worker thread.
+		/// Must be called before start(). Resets automatically on each start().
+		void set_on_first_data(std::function<void()> cb)
+		{
+			m_on_first_data = std::move(cb);
+			m_first_data_fired.store(false, std::memory_order_release);
+		}
+
 		void start(const std::filesystem::path& output_dir = ".")
 		{
 			if (m_running.exchange(true))
@@ -41,6 +50,8 @@ namespace trace
 
 			m_output_dir = output_dir;
 			std::filesystem::create_directories(m_output_dir);
+
+			m_first_data_fired.store(false, std::memory_order_release);
 
 			m_threads.reserve(core_count);
 			for (uint32_t i = 0; i < core_count; ++i)
@@ -73,6 +84,9 @@ namespace trace
 		std::atomic_bool m_running{false};
 		std::vector<std::thread> m_threads;
 		std::filesystem::path m_output_dir;
+
+		std::function<void()> m_on_first_data;
+		std::atomic_bool m_first_data_fired{false};
 
 		void worker(uint32_t core_id)
 		{
@@ -110,6 +124,13 @@ namespace trace
 					file.write(reinterpret_cast<const char*>(batch.data()), static_cast<std::streamsize>(count * sizeof(trace::entry)));
 
 					total_written += count;
+
+					// Fire the first-data callback on the very first non-empty drain
+					if (!m_first_data_fired.exchange(true, std::memory_order_acq_rel))
+					{
+						if (m_on_first_data)
+							m_on_first_data();
+					}
 
 					// Keep going immediately if the batch was full (more data likely pending)
 					if (count == batch.size())
