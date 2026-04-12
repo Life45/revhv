@@ -5,6 +5,9 @@
 #include "trace_poller.hpp"
 #include "../common/trace_cfg_export.hpp"
 
+#include <atomic>
+#include <thread>
+
 namespace commands
 {
 	class engine
@@ -31,6 +34,10 @@ namespace commands
 		kmodule_context& m_modules;
 		trace::poller m_trace_poller;
 
+		// Snapshot thread for onload auto-trace: waits for first trace data, then polls until the target driver appears in the module list.
+		std::thread m_onload_snapshot_thread;
+		std::atomic_bool m_snapshot_triggered{false};
+
 		// EPT transition config state, mirrored from per-vCPU KM state for local export
 		trace::ept_transition_cfg m_generic_transition_cfg = trace::default_generic_cfg;
 		std::string m_generic_transition_fmt;
@@ -50,6 +57,7 @@ namespace commands
 		bool handle_lm(const std::vector<std::string>& args);
 		bool handle_at(const std::vector<std::string>& args);
 		bool handle_at_config(const std::vector<std::string>& args);
+		bool handle_at_onload(const std::vector<std::string>& args);
 		bool handle_trace_parse(const std::vector<std::string>& args);
 		bool handle_apic_info(const std::vector<std::string>& args);
 		bool handle_test_df(const std::vector<std::string>& args);

@@ -343,6 +343,43 @@ namespace hv::hypercall
 		guest_context->rax = 1;	 // Success
 	}
 
+	static void handle_set_onload_target(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		const void* req_ptr = reinterpret_cast<const void*>(guest_context->rdx);
+
+		onload_target_request req{};
+		if (introspection::read_guest_virtual(req_ptr, &req, sizeof(req)) != sizeof(req))
+		{
+			LOG_ERROR("set_onload_target: failed to read onload_target_request from guest");
+			guest_context->rax = 0;
+			return;
+		}
+
+		// Ensure null-termination regardless of what the guest sent
+		req.driver_name[max_onload_name_length - 1] = '\0';
+
+		{
+			sync::scoped_spin_lock guard(hv::g_hv.onload_target.lock);
+			utils::memcpy(hv::g_hv.onload_target.name, req.driver_name, max_onload_name_length);
+			hv::g_hv.onload_target.active = true;
+		}
+
+		LOG_INFO("set_onload_target: watching for driver '%s'", hv::g_hv.onload_target.name);
+		guest_context->rax = 1;
+	}
+
+	static void handle_clear_onload_target(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
+	{
+		{
+			sync::scoped_spin_lock guard(hv::g_hv.onload_target.lock);
+			hv::g_hv.onload_target.active = false;
+			hv::g_hv.onload_target.name[0] = '\0';
+		}
+
+		LOG_INFO("clear_onload_target: onload auto-trace target cleared");
+		guest_context->rax = 1;
+	}
+
 	bool handle_hypercall(vcpu::guest_context* guest_context, vcpu::vcpu* vcpu)
 	{
 		// Rax must be the hypercall key, otherwise it's not a valid hypercall and we should inject #UD
@@ -382,6 +419,12 @@ namespace hv::hypercall
 			break;
 		case hypercall_number::at_config_ept_transition:
 			handle_at_config_ept_transition(guest_context, vcpu);
+			break;
+		case hypercall_number::set_onload_target:
+			handle_set_onload_target(guest_context, vcpu);
+			break;
+		case hypercall_number::clear_onload_target:
+			handle_clear_onload_target(guest_context, vcpu);
 			break;
 		case hypercall_number::test_host_df:
 			// This hypercall is meant for testing the robustness of the host crash handling mechanism by intentionally causing a double fault on the host.

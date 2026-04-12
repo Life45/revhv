@@ -73,4 +73,16 @@ namespace hv::hypercall
 
 	/// @brief Intentionally causes a double fault on the host for testing purposes.
 	void test_host_double_fault();
+
+	/// @brief Installs an onload auto-trace target in the hypervisor.
+	/// When MmLoadSystemImage loads a driver whose basename matches driver_name (case-insensitive),
+	/// the hypervisor automatically enables auto-trace for that driver's image range.
+	/// Any previously set target is overwritten.
+	/// @param driver_name Null-terminated ASCII driver basename, e.g. "Dbgv.sys"
+	/// @return True if the hypercall succeeded, false otherwise
+	bool onload_target_set(const char* driver_name);
+
+	/// @brief Clears any pending onload auto-trace target in the hypervisor.
+	/// @return True if the hypercall succeeded, false otherwise
+	bool onload_target_clear();
 }  // namespace hv::hypercall

@@ -44,6 +44,15 @@ namespace hv::hypercall
 		::trace::ept_transition_cfg cfg;  // Data-field mapping to install
 	};
 
+	/// Maximum length of driver name for the onload auto-trace target.
+	constexpr size_t max_onload_name_length = 64;
+
+	/// @brief Request for the set_onload_target hypercall, driver_name is a null-terminated string.
+	struct onload_target_request
+	{
+		char driver_name[max_onload_name_length];
+	};
+
 	enum hypercall_number : uint64_t
 	{
 		ping = 1,
@@ -57,6 +66,8 @@ namespace hv::hypercall
 		get_apic_info,
 		test_host_df,  // Causes host double fault by thrashing the host RSP!
 		at_config_ept_transition,
+		set_onload_target,	  // Store driver name to watch for; auto-trace fires when it loads
+		clear_onload_target,  // Clear any pending onload auto-trace target
 		hypercall_max
 	};
 }  // namespace hv::hypercall

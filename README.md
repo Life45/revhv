@@ -320,6 +320,21 @@ at enable fffff80312345678 100 C:\traces
 at disable
 ```
 
+- `at onload <driver_name> [output_dir]`
+  - Arm auto-trace to fire automatically the moment a specific driver is loaded by the system.
+  - `driver_name` is the driver basename, including extension, and is matched case-insensitively (e.g. `Dbgv.sys`).
+  - The trace poller is started immediately; tracing begins once the driver loads.
+  - `trace_cfg.bin` is saved right away. `modules.bin` is saved lazily: the controller waits for the first non-empty trace batch (indicating the driver is executing), then polls the module list until the target driver appears, and only then exports `modules.bin` so that the target is guaranteed to be present in the snapshot.
+  - Issuing `at onload` again overwrites any existing target.
+  - Example:
+
+```text
+at onload Dbgv.sys
+```
+
+- `at onload clear`
+  - Disarm the pending onload target and stop the trace poller.
+
 - `at config generic <f0> [f1] [f2] [f3] [f4] [f5]`
   - Set the default field map used for transition captures.
   - Example:
@@ -395,7 +410,7 @@ trace parse modules.bin .\traces combined.log
 
 ## Typical workflow
 
-One straightforward workflow looks like this:
+One straightforward workflow for a driver that is already loaded:
 
 1. Start `revhv-um` and verify the hypervisor is present.
 2. Use `ln` and `lm` to identify the target module and address range.
@@ -404,6 +419,8 @@ One straightforward workflow looks like this:
 5. Exercise the target.
 6. Disable auto-trace.
 7. Parse the resulting trace directory.
+
+When the target driver is not yet loaded at analysis time, use `at onload` instead.
 
 The following is a partial extracted log(some parts removed for readability, formatting configured to only show RIP) from an example run on a heavily virtualized commercial anti-cheat driver, showing a small part of its unload routine:
 

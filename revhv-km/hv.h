@@ -14,6 +14,14 @@ namespace hv
 	/// 	   Preemption timer is sometimes not exposed in nested virtualization, this option can be disabled to avoid launch failure.
 	constexpr bool tsc_hiding_enabled = true;
 
+	/// @brief Shared state for the auto-trace-on-driver-load feature
+	struct onload_target_state
+	{
+		sync::spin_lock lock;
+		bool active;
+		char name[hypercall::max_onload_name_length];
+	};
+
 	struct hypervisor
 	{
 		memory::host_page_tables host_page_tables;
@@ -29,6 +37,9 @@ namespace hv
 
 		// Standard logger shared across all cores
 		logging::standard_logger logger;
+
+		// Onload auto-trace target, checked by the MmLoadSystemImage hook
+		onload_target_state onload_target;
 	};
 
 	extern hypervisor g_hv;
