@@ -1,44 +1,90 @@
 # revhv
 
-revhv is a type-2 Intel x86-64 hypervisor for modern Windows systems. The project exists to make heavily obfuscated or virtualized binaries, especially kernel drivers, easier to analyze when static reversing is too expensive or too blind. It also works well as an initial analysis tool before diving deep into the obfuscated binary. The implementation stays intentionally close to the Intel SDM and focuses on collecting valuable execution data.
+revhv is a type-2 Intel x86-64 hypervisor for modern Windows systems built to facilitate dynamic tracing of highly obfuscated or virtualized drivers where static analysis becomes too expensive or too blind.
 
-The current tracing model is built around control-flow transitions between a monitored address range and the rest of the system. In practice, that means revhv can show which kernel APIs or other external code paths an obfuscated target actually reaches at runtime. 
+The tracing model is built around control-flow transitions between a monitored address range and the rest of the system by utilizing EPT. That means revhv can show which kernel APIs or other external code paths an obfuscated target actually reaches at runtime.
 
-It is best thought of as a dynamic stepping engine: It breaks in when execution is transferred from the target to any other code in the system in any way, logs it, resumes until execution reaches the target again, then repeats.
+The project is intentionally narrow. It is not trying to be a generic instruction tracer or a full introspection framework. The goal is to answer questions like:
 
-You can check out my [write-up](https://life45.github.io/blog/dynamic-analysis-with-revhv/) which explains the core logic in more detail, and more importantly contains an actual analysis example using revhv.
+- Which kernel APIs does this protected driver actually reach at runtime?
+- What arguments/guest state such as registers were present at that boundary?
 
-## Design goals
+For a longer walkthrough and a real analysis example, see the write-up: [dynamic analysis with revhv](https://life45.github.io/blog/dynamic-analysis-with-revhv/).
 
-- Keep VMX-root state and execution isolated from the host OS as much as possible.
-- Stay close to hardware behavior and the Intel SDM.
-- Trace control-flow transitions with low enough overhead to be usable against real targets.
-- Preserve enough crash state to make failure diagnosable instead of silently resetting the machine.
-- Make captured data useful through symbol resolution, module snapshots, and configurable formatting.
+## How tracing works
 
-## What the repo contains
+revhv keeps two EPTP views per vCPU:
+
+- normal execution: *target* pages are non-executable
+- target execution: all *non-target* pages are non-executable
+
+Crossing the boundary between those views causes an EPT violation. revhv handles the VM-exit, flips the active EPTP, and resumes at the same RIP. 
+A trace record is emitted for `target execution` -> `normal execution` transitions.
+
+<a href="trace_seq_diagram.png">
+  <img src="trace_seq_diagram.png" width="600"/>
+</a>
+
+The same boundary concept can just as easily be used in reverse to uncover hooks or inbound control-flow into a region, although that is not the current implementation focus.
+
+## Typical workflow
+
+1. Start `revhv-um` and verify the hypervisor is present.
+2. Use `ln` and `lm` to identify the target module and address range.
+3. Configure the generic or exact capture fields you care about.
+4. Enable auto-trace for the target range, or arm `at onload` if the driver is not loaded yet.
+5. Exercise the target.
+6. Disable auto-trace.
+7. Parse the trace directory offline.
+
+The following is a partial extracted log from an example run on a heavily virtualized anti-cheat driver, showing part of its unload routine:
+
+<details>
+<summary>Example partial logs of the unload routine</summary>
+
+```text
+...
+[core 8] ntoskrnl!KeAcquireGuardedMutex
+[core 8] ntoskrnl!KeReleaseGuardedMutex
+[core 8] ntoskrnl!NtClose
+[core 8] ntoskrnl!ObfDereferenceObject
+[core 8] ntoskrnl!ExFreePoolWithTag
+[core 8] ntoskrnl!PsSetCreateProcessNotifyRoutineEx
+[core 8] ntoskrnl!PsRemoveCreateThreadNotifyRoutine
+[core 8] ntoskrnl!PsRemoveLoadImageNotifyRoutine
+[core 8] ntoskrnl!ObUnRegisterCallbacks
+...
+[core 8] ntoskrnl!SeUnregisterImageVerificationCallback
+[core 8] ntoskrnl!CmUnRegisterCallback
+...
+[core 8] ntoskrnl!KeSetEvent
+[core 10] ntoskrnl!KeResetEvent
+[core 8] ntoskrnl!KeSetEvent
+[core 8] ntoskrnl!KeWaitForSingleObject
+[core 10] ntoskrnl!KeAcquireGuardedMutex
+[core 10] ntoskrnl!KeReleaseGuardedMutex
+[core 10] ntoskrnl!PsTerminateSystemThread
+...
+```
+
+</details>
+
+## Repository layout
 
 - `revhv-km`: KMDF driver that enters VMX operation, virtualizes each logical processor, manages EPT state, handles VM-exits, exposes hypercalls, and emits logs and trace data.
-- `revhv-um`: usermode controller for command dispatch, symbol resolution, module enumeration, log draining, trace polling, trace configuration, and offline trace parsing.
+- `revhv-um`: usermode controller for command dispatch, symbol resolution, module enumeration, trace polling, trace configuration, log draining, and offline trace parsing.
 - `common`: shared trace, hypercall, logging, and export formats used by both components.
 
-## Status and scope
+## Build and environment
 
-This project is aimed at low-level reversing and runtime analysis for reverse-engineers with some prior knowledge. The current implementation is already useful for discovering cross-boundary execution from opaque targets, but the project is still far from complete and under active development.
+- Use a recursive clone because dependencies are included as submodules under the project `external` directories.
+- Build the Visual Studio solution `revhv.sln`.
+- Only the `x64 Debug` configuration is currently set up.
+- `revhv-km` requires the WDK.
+- Admin rights are required for symbol resolution in `revhv-um`.
+- The current code has been tested on Windows 10 and Windows 11 in VMware nested virtualization VMs, and on Windows 11 bare metal.
 
-## Building the project
-
-Other dependencies are added as git submodules under `external` folders per project component, therefore a recursive git clone is advised.
-
-The project is provided as a Visual Studio solution. Only the x64 Debug configuration is currently configured. 
-
-WDK is required to build `revhv-km`.
-
-`revhv-km` driver can be loaded both by traditional methods(when DSE is disabled, eg. test-signing mode) and manual-mapping. However, the PE & NT headers of the driver are used by its memory manager for mapping host page tables, which most manual mappers strip/omit when mapping the driver, resulting in a system crash. Therefore, to use such a manual mapper, necessary implementation changes must be made either to the mapper or to `revhv-km`.
-
-Admin rights are required to use the symbol resolution feature in `revhv-um`.
-
-Both `revhv-km` and `revhv-um` have been tested in Windows 11 & Windows 10 VMWare nested virtualization VMs, as well as on Windows 11 bare metal.
+`revhv-km` can be loaded through traditional methods when DSE is disabled, or through manual mapping. However, the driver's PE and NT headers are currently used by its memory manager when mapping host page tables. Many manual mappers strip or omit those headers, which can crash the system. If a manual mapper is used, either the mapper or `revhv-km` needs corresponding implementation changes.
 
 ## Isolation from the host OS
 
@@ -61,28 +107,7 @@ Other choices:
 - `GSBASE` is set to zero in host state
 - `FSBASE` is used as the current `vcpu` pointer
 
-## Tracing model
-
-The core tracing mechanism uses two EPTP configurations per vCPU:
-
-- `normal execution`: used while code is running outside the monitored range.
-- `target execution`: used while code is running inside the monitored range.
-
-When auto-trace is enabled for an address range, revhv programs EPT permissions so an execution transition across that range boundary causes an EPT violation. The VM-exit handler then flips the current EPTP:
-
-- normal -> target: when execution enters the monitored range
-- target -> normal: when execution leaves it
-
-On the target -> normal transition, revhv emits a binary trace record into a per-core ring buffer. This produces a control-flow trace of when the monitored code transfers execution to another module or region.
-
-This is intentionally narrower than instruction-by-instruction tracing. The point is to capture boundaries that answer questions such as:
-
-- Which kernel APIs does the packed or virtualized driver actually call?
-- What arguments/guest state were present at the transfer point?
-
-The same boundary concept can just as easily be used in reverse to uncover hooks or inbound control-flow into a region, although that is not the current implementation focus.
-
-## Trace data path
+## Trace logging
 
 Trace logging is split into two separate systems:
 
@@ -105,9 +130,7 @@ Offline parsing then:
 5. resolves symbols lazily from module images on disk
 6. writes a formatted combined log
 
-### Limitation for offline parsing
-
-Offline parsing has to be done on the same machine that auto-trace logs were captured on, simply because symbol parsing depends on being able to download the PDB of a module from the module list, and it does so by loading the module from disk using its stored full path in modules.bin. On a different machine, the path might not be present at all, or just simply be the wrong version of the module.
+Offline parsing currently has to be done on the same machine that auto-trace logs were captured on, simply because symbol parsing depends on the full path of the module being accessible.
 
 Future versions of revhv will address this limitation.
 
@@ -142,7 +165,7 @@ Example offline formatting rule:
 at config fmt exact nt!ExFreePool "{retaddr} -> {rip}(pool = {rcx:x})"
 ```
 
-That distinction is important: `revhv-km` records raw data only for performance reasons, `revhv-um` decides how to render it later. It can't render data that has not been recorded.
+`revhv-km` captures raw data only for performance reasons, `revhv-um` decides how to render it later. It can't render data that has not been captured.
 
 ## Exception handling without SEH
 
@@ -232,7 +255,8 @@ A practical consequence is that some commands remain useful without VMX at all. 
 
 Some commands are intentionally in *WinDbg fashion* for familiarity.
 
-### General
+<details>
+<summary>General</summary>
 
 - `help` or `?`
   - Show the general command list.
@@ -240,7 +264,10 @@ Some commands are intentionally in *WinDbg fashion* for familiarity.
 - `q`, `quit`, `exit`
   - Exit the controller.
 
-### Symbol and module workflows
+</details>
+
+<details>
+<summary>Symbol and module workflows</summary>
 
 - `ln <address|symbol>`
   - Resolve an address to the nearest symbol, or a symbol expression to an address.
@@ -271,7 +298,10 @@ lm nt
 lm export modules.bin
 ```
 
-### Memory inspection
+</details>
+
+<details>
+<summary>Memory inspection</summary>
 
 - `db`, `dw`, `dd`, `dq`, `dp`
   - Dump guest virtual memory through hypercalls.
@@ -299,7 +329,10 @@ dp ntoskrnl!KeBugCheckEx+20 8
 dq nt:PAGE+123
 ```
 
-### Auto-trace
+</details>
+
+<details>
+<summary>Auto-trace</summary>
 
 - `at enable <address|symbol> <size> [output_dir]`
   - Enable auto-trace for an address range.
@@ -384,7 +417,10 @@ at config fmt clear exact nt!ExFreePool
 at config export trace_cfg.bin
 ```
 
-### Offline trace parsing
+</details>
+
+<details>
+<summary>Offline trace parsing</summary>
 
 - `trace parse <modules.bin> <trace_dir> [output_file]`
   - Parse all `trace_core_N.bin` files in a directory.
@@ -399,7 +435,10 @@ trace parse modules.bin .\traces
 trace parse modules.bin .\traces combined.log
 ```
 
-### Miscellaneous
+</details>
+
+<details>
+<summary>Miscellaneous</summary>
 
 - `apic`
   - Query APIC information through the hypervisor.
@@ -408,46 +447,7 @@ trace parse modules.bin .\traces combined.log
   - Deliberately trigger a host double fault path for testing.
   - This is expected to crash the system, but not freeze it. The goal is to test ISTs and the unrecoverable error mechanism.
 
-## Typical workflow
-
-One straightforward workflow for a driver that is already loaded:
-
-1. Start `revhv-um` and verify the hypervisor is present.
-2. Use `ln` and `lm` to identify the target module and address range.
-3. Set a generic or exact capture configuration.
-4. Enable auto-trace for the target range.
-5. Exercise the target.
-6. Disable auto-trace.
-7. Parse the resulting trace directory.
-
-When the target driver is not yet loaded at analysis time, use `at onload` instead.
-
-The following is a partial extracted log(some parts removed for readability, formatting configured to only show RIP) from an example run on a heavily virtualized commercial anti-cheat driver, showing a small part of its unload routine:
-
-```text
-...
-[core 8] ntoskrnl!KeAcquireGuardedMutex
-[core 8] ntoskrnl!KeReleaseGuardedMutex
-[core 8] ntoskrnl!NtClose
-[core 8] ntoskrnl!ObfDereferenceObject
-[core 8] ntoskrnl!ExFreePoolWithTag
-[core 8] ntoskrnl!PsSetCreateProcessNotifyRoutineEx
-[core 8] ntoskrnl!PsRemoveCreateThreadNotifyRoutine
-[core 8] ntoskrnl!PsRemoveLoadImageNotifyRoutine
-[core 8] ntoskrnl!ObUnRegisterCallbacks
-...
-[core 8] ntoskrnl!SeUnregisterImageVerificationCallback
-[core 8] ntoskrnl!CmUnRegisterCallback
-...
-[core 8] ntoskrnl!KeSetEvent
-[core 10] ntoskrnl!KeResetEvent
-[core 8] ntoskrnl!KeSetEvent
-[core 8] ntoskrnl!KeWaitForSingleObject
-[core 10] ntoskrnl!KeAcquireGuardedMutex
-[core 10] ntoskrnl!KeReleaseGuardedMutex
-[core 10] ntoskrnl!PsTerminateSystemThread
-...
-```
+</details>
 
 ## Acknowledgements
 
